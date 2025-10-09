@@ -1,0 +1,255 @@
+:root {
+  --bg: #f7f7f8;
+  --card: #fff;
+  --text: #0b0b0f;
+  --border: #e5e7eb;
+  --primary: #111827;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0b0b0f;
+  --card: #111318;
+  --text: #f9fafb;
+  --border: #1f2937;
+  --primary: #e5e7eb;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100vh;
+}
+
+/* SIDEBAR */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+
+.side-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.icon {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  padding: 5px;
+  cursor: pointer;
+}
+
+.btn {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px 10px;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--primary);
+  color: var(--bg);
+}
+
+.side-controls {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px 8px;
+  margin-top: 8px;
+}
+
+.search input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  width: 100%;
+}
+
+.conv-list {
+  overflow: auto;
+  padding: 10px;
+}
+
+.conv {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.conv.active {
+  outline: 2px solid var(--primary);
+}
+
+.conv .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+/* MAIN CHAT */
+.main {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.messages {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stack {
+  width: 100%;
+  max-width: 800px;
+  padding: 0 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bubble-row {
+  display: flex;
+}
+
+.bubble-row.end {
+  justify-content: flex-end;
+}
+
+.bubble {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: var(--card);
+  max-width: 75%;
+}
+
+.bubble.user {
+  background: var(--primary);
+  color: var(--bg);
+}
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: gray;
+}
+
+.typing .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: gray;
+  animation: bounce 1s infinite;
+}
+
+.typing .dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing .dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.6; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* COMPOSER */
+.composer {
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.composer textarea {
+  width: 100%;
+  max-width: 800px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 50px;
+  background: var(--card);
+  color: var(--text);
+}
+
+.send {
+  width: 100%;
+  max-width: 800px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.empty-state {
+  text-align: center;
+  margin-top: 60px;
+}
+
+.empty-state .chiprow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #eef2ff;
+  color: #3730a3;
+}
