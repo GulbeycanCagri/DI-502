@@ -16,11 +16,19 @@ const Icon = {
 
 const ROLE = { user: "user", assistant: "assistant", system: "system" };
 
-// Mock backend (replace with real fetch)
-async function fakeChat(messages) {
-  await new Promise((r) => setTimeout(r, 500));
-  const last = messages[messages.length - 1]?.content || "";
-  return { id: Math.random().toString(36).slice(2), role: ROLE.assistant, content: `**Summary:** ${last}\nData sources: Alpha Vantage, Yahoo Finance.` };
+/** Call backend via proxy: POST /api/chat  ->  FastAPI /chat */
+async function callBackendChat(query) {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${text}`);
+  }
+  const data = await res.json(); // { ai_response: "..." }
+  return { id: Math.random().toString(36).slice(2), role: ROLE.assistant, content: data.ai_response };
 }
 
 export default function App() {
@@ -68,16 +76,19 @@ export default function App() {
     setSending(true);
 
     // append user message
-    setConvs((p) => p.map((c) => c.id === id ? { ...c, title: c.title === "New chat" ? text.slice(0,36) : c.title, messages: [...c.messages, { id: Math.random().toString(36).slice(2), role: ROLE.user, content: text }] } : c));
+    const userMsg = { id: Math.random().toString(36).slice(2), role: ROLE.user, content: text };
+    setConvs((p) => p.map((c) => c.id === id
+      ? { ...c, title: c.title === "New chat" ? text.slice(0,36) : c.title, messages: [...c.messages, userMsg] }
+      : c
+    ));
 
     try {
-      // build message list for mock backend
-      const curr = convs.find((c) => c.id === id) || { messages: [] };
-      const msgs = [...curr.messages, { role: ROLE.user, content: text }].map(({ role, content }) => ({ role, content }));
-      const res = await fakeChat(msgs);
-      setConvs((p) => p.map((c) => c.id === id ? { ...c, messages: [...c.messages, res] } : c));
+      // call backend via proxy
+      const reply = await callBackendChat(text);
+      setConvs((p) => p.map((c) => c.id === id ? { ...c, messages: [...c.messages, reply] } : c));
     } catch (e) {
-      setConvs((p) => p.map((c) => c.id === id ? { ...c, messages: [...c.messages, { id: Math.random().toString(36).slice(2), role: ROLE.assistant, content: `⚠️ Error: ${e?.message || 'Backend error'}` }] } : c));
+      const err = { id: Math.random().toString(36).slice(2), role: ROLE.assistant, content: `⚠️ Error: ${e?.message || 'Backend error'}` };
+      setConvs((p) => p.map((c) => c.id === id ? { ...c, messages: [...c.messages, err] } : c));
     } finally {
       setSending(false);
       setInput("");
@@ -118,7 +129,6 @@ export default function App() {
       <section className="main">
         <div className="topbar">
           <div className="left"><strong>Finance Assistant</strong></div>
-          <div className="right"><button className="btn">Finance‑GPT ▾</button></div>
         </div>
 
         <div className="messages">
@@ -126,7 +136,7 @@ export default function App() {
             <div className="empty-state">
               <div className="logo">💰</div>
               <h1>Ask finance anything</h1>
-              <p>Real‑time markets, fundamentals, portfolio ideas, macro insights.</p>
+              <p>Real-time markets, fundamentals, portfolio ideas, macro insights.</p>
               <div className="chiprow">{chips.map((c) => <button key={c} className="chip" onClick={() => newChat(c)}>{c}</button>)}</div>
             </div>
           )}
