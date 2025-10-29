@@ -1,0 +1,19 @@
+# Git and IDE files
+.git
+.gitignore
+.idea/
+.vscode/
+
+# Dependencies are installed in the container
+node_modules
+
+# Build output is generated in the container
+dist
+build
+
+# Local environment variables
+.env
+.env.local
+
+# Docker files
+Dockerfile
