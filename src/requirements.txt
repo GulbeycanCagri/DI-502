@@ -1,0 +1,17 @@
+# Core ML & Transformers
+torch
+transformers
+accelerate
+bitsandbytes
+
+# LlamaIndex
+llama-index
+llama-index-llms-huggingface
+llama-index-embeddings-huggingface
+
+# Data Handling & API Requests
+pandas
+requests
+
+# Optional but recommended for document reading
+pypdf

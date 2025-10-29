@@ -5,7 +5,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy package files from frontend (since Dockerfile is outside it)
-COPY frontend/package.json frontend/package-lock.json ./ 
+COPY frontend/package.json frontend/package-lock.json ./
 
 # Install dependencies
 RUN npm ci --no-audit --no-fund
