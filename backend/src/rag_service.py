@@ -13,7 +13,10 @@ from llama_index.core import (
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.prompts import PromptTemplate  
+from dotenv import load_dotenv  # <-- BU SATIRI EKLEYİN
 
+# .env dosyasındaki değişkenleri yükle
+load_dotenv()
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 
 
@@ -97,39 +100,44 @@ Settings.chunk_size = 1024
 #  PLAIN CHAT 
 # ---------------------------------------------------------------------------
 
-def plain_chat(question: str) -> str:
-    """
-    Handles conversational chat with manual stop sequence handling.
-    """
-    print("--- Performing plain chat ---")
+def plain_chat(question: str, test :False) -> str:
     
-    prompt = (
-        "You are a helpful financial analyst. "
-        "If the user asks a general question, have a normal conversation. "
-        "If the user asks a financial question, answer it concisely. "
-        "Never use hashtags or emojis.\n\n"
-        f"User: {question}\nAnalyst:"
-    )
+    if test:
+        print("--- Performing plain chat (test mode) ---")
+        return "Test response"
+    else:
+        """
+        Handles conversational chat with manual stop sequence handling.
+        """
+        print("--- Performing plain chat ---")
+        
+        prompt = (
+            "You are a helpful financial analyst. "
+            "If the user asks a general question, have a normal conversation. "
+            "If the user asks a financial question, answer it concisely. "
+            "Never use hashtags or emojis.\n\n"
+            f"User: {question}\nAnalyst:"
+        )
 
-    output = chat_pipeline(
-        prompt,
-        max_new_tokens=150,
-        temperature=0.7,
-        do_sample=True,
-        top_p=0.95,
-    )
-    
-    raw_response = output[0]["generated_text"]
-    stop_sequences = ["\nUser:", "\nAnalyst:"]
-    
-    min_stop_index = len(raw_response)
-    for seq in stop_sequences:
-        stop_index = raw_response.find(seq)
-        if stop_index != -1 and stop_index < min_stop_index:
-            min_stop_index = stop_index
-            
-    clean_response = raw_response[:min_stop_index].strip()
-    return clean_response
+        output = chat_pipeline(
+            prompt,
+            max_new_tokens=150,
+            temperature=0.7,
+            do_sample=True,
+            top_p=0.95,
+        )
+        
+        raw_response = output[0]["generated_text"]
+        stop_sequences = ["\nUser:", "\nAnalyst:"]
+        
+        min_stop_index = len(raw_response)
+        for seq in stop_sequences:
+            stop_index = raw_response.find(seq)
+            if stop_index != -1 and stop_index < min_stop_index:
+                min_stop_index = stop_index
+                
+        clean_response = raw_response[:min_stop_index].strip()
+        return clean_response
 
 
 # ---------------------------------------------------------------------------
@@ -198,140 +206,151 @@ def extract_ticker_from_keywords(question: str) -> str | None:
     print("No specific ticker found in question.")
     return None
 
-def query_online(question: str) -> str:
-    """
-    Performs online research using the Finnhub.io API.
-    - If a ticker is found, gets company-specific news.
-    - If no ticker is found, gets general market news.
-    - Uses LlamaIndex's vector search to "re-rank" and find
-      the most relevant articles from a larger pool.
-    """
-    print("--- Performing online research (Finnhub Hybrid + Re-rank Strategy) ---")
+def query_online(question: str, test: bool = False) -> str:
+    if test:
+        print("--- Performing online research (test mode) ---")
+        return("Test online research response")
+    else:
     
-    ticker = extract_ticker_from_keywords(question)
-
-    try:
-        articles = []
+        """
+        Performs online research using the Finnhub.io API.
+        - If a ticker is found, gets company-specific news.
+        - If no ticker is found, gets general market news.
+        - Uses LlamaIndex's vector search to "re-rank" and find
+        the most relevant articles from a larger pool.
+        """
+        print("--- Performing online research (Finnhub Hybrid + Re-rank Strategy) ---")
         
-        if ticker:
-            print(f"Ticker identified: {ticker}. Fetching company-specific news.")
-            today = datetime.date.today()
-            three_days_ago = today - datetime.timedelta(days=15)
+        ticker = extract_ticker_from_keywords(question)
+
+        try:
+            articles = []
             
-            endpoint_url = "https://finnhub.io/api/v1/company-news"
-            params = {
-                'symbol': ticker,
-                'from': three_days_ago.strftime('%Y-%m-%d'),
-                'to': today.strftime('%Y-%m-%d'),
-                'token': FINNHUB_API_KEY
-            }
-            response = requests.get(endpoint_url, params=params)
-            response.raise_for_status()
-            articles = response.json()
-            articles = articles[:25] 
+            if ticker:
+                print(f"Ticker identified: {ticker}. Fetching company-specific news.")
+                today = datetime.date.today()
+                three_days_ago = today - datetime.timedelta(days=15)
+                
+                endpoint_url = "https://finnhub.io/api/v1/company-news"
+                params = {
+                    'symbol': ticker,
+                    'from': three_days_ago.strftime('%Y-%m-%d'),
+                    'to': today.strftime('%Y-%m-%d'),
+                    'token': FINNHUB_API_KEY
+                }
+                response = requests.get(endpoint_url, params=params)
+                response.raise_for_status()
+                articles = response.json()
+                articles = articles[:25] 
 
-        else:
-            print("No specific ticker. Fetching general market news.")
-            endpoint_url = "https://finnhub.io/api/v1/news"
-            params = {
-                'category': 'general',
-                'minId': 0, # Required param, 0 means latest
-                'token': FINNHUB_API_KEY
-            }
-            response = requests.get(endpoint_url, params=params)
-            response.raise_for_status()
-            articles = response.json()
-            articles = articles[:30] 
+            else:
+                print("No specific ticker. Fetching general market news.")
+                endpoint_url = "https://finnhub.io/api/v1/news"
+                params = {
+                    'category': 'general',
+                    'minId': 0, # Required param, 0 means latest
+                    'token': FINNHUB_API_KEY
+                }
+                response = requests.get(endpoint_url, params=params)
+                response.raise_for_status()
+                articles = response.json()
+                articles = articles[:30] 
 
-        if not articles:
+            if not articles:
 
-            return "No recent news found."
+                return "No recent news found."
 
-        print(f"Found {len(articles)} articles from Finnhub. Now processing for relevance.")
+            print(f"Found {len(articles)} articles from Finnhub. Now processing for relevance.")
 
-        # 4. Create Document List
-        documents_list = []
-        news_df = pd.DataFrame(columns=['headline', 'summary', 'source', 'url'])
-        for article in articles:
-            headline = article.get('headline', '')
-            summary = article.get('summary', '')
-            source_name = article.get('source', 'Unknown')
-            
-            full_text = (
-                f"Source: {source_name}\n"
-                f"Headline: {headline}\n"
-                f"Summary: {summary}\n" 
+            # 4. Create Document List
+            documents_list = []
+            news_df = pd.DataFrame(columns=['headline', 'summary', 'source', 'url'])
+            for article in articles:
+                headline = article.get('headline', '')
+                summary = article.get('summary', '')
+                source_name = article.get('source', 'Unknown')
+                
+                full_text = (
+                    f"Source: {source_name}\n"
+                    f"Headline: {headline}\n"
+                    f"Summary: {summary}\n" 
+                )
+                
+                news_df = pd.concat([news_df, 
+                                    pd.DataFrame(
+                                        [{ 'headline': 
+                                            headline, 'summary': 
+                                                summary, 'source': source_name, 'url': article.get('url', '') }])], 
+                                    ignore_index=True)
+                
+                
+                
+                if summary and headline: 
+                    doc = Document(
+                        text=full_text,
+                        metadata={
+                            "source_title": headline,
+                            "url": article.get('url', ''),
+                            "source_name": source_name
+                        }
+                    )
+                    documents_list.append(doc)
+
+            if not documents_list:
+                return "Found articles, but none had relevant content to process."
+
+            index = VectorStoreIndex.from_documents(documents_list)
+            query_engine = index.as_query_engine(
+                response_mode="compact",
+                #text_qa_template=qa_template,
+                similarity_top_k=5
+
             )
             
-            news_df = pd.concat([news_df, 
-                                 pd.DataFrame(
-                                     [{ 'headline': 
-                                         headline, 'summary': 
-                                             summary, 'source': source_name, 'url': article.get('url', '') }])], 
-                                ignore_index=True)
-            
-            
-            
-            if summary and headline: 
-                doc = Document(
-                    text=full_text,
-                    metadata={
-                        "source_title": headline,
-                        "url": article.get('url', ''),
-                        "source_name": source_name
-                    }
-                )
-                documents_list.append(doc)
+            print(f"Synthesizing answer from top 5 most relevant chunks...")
+            response = query_engine.query(question)
+            news_df.to_csv("finnhub_retrieved_articles.csv", index=False)
+            return str(response)
 
-        if not documents_list:
-            return "Found articles, but none had relevant content to process."
-
-        index = VectorStoreIndex.from_documents(documents_list)
-        query_engine = index.as_query_engine(
-            response_mode="compact",
-            #text_qa_template=qa_template,
-            similarity_top_k=5
-
-        )
-        
-        print(f"Synthesizing answer from top 5 most relevant chunks...")
-        response = query_engine.query(question)
-        news_df.to_csv("finnhub_retrieved_articles.csv", index=False)
-        return str(response)
-
-    except Exception as e:
-        print(f"Error in query_online (Finnhub Strategy): {e}")
-        return "Error while doing online research."
+        except Exception as e:
+            print(f"Error in query_online (Finnhub Strategy): {e}")
+            return "Error while doing online research."
     
 # ---------------------------------------------------------------------------
 # DOCUMENT RAG (Upgraded)
 # ---------------------------------------------------------------------------
 
-def query_document(question: str, doc_path: str) -> str:
-    """
-    Performs RAG on a local document.
-    """
-    print(f"--- Querying document: {doc_path} ---")
-    if not os.path.exists(doc_path):
-        return "Error: Document not found."
+def query_document(question: str, doc_path: str, test: bool = False) -> str:
+    
+    if test:
+        print("--- Performing document research (test mode) ---")
+        return("Test document research response")
+    else:
 
-    try:
-        reader = SimpleDirectoryReader(input_files=[doc_path])
-        docs = reader.load_data()
-        index = VectorStoreIndex.from_documents(docs)
-        
-        # Create Query Engine with our custom prompt
-        query_engine = index.as_query_engine(
-            response_mode="compact",
-            #text_qa_template=qa_template  # <-- USE CUSTOM PROMPT
-        )
-        
-        response = query_engine.query(question)
-        return str(response)
+        """
+        Performs RAG on a local document.
+        """
+        print(f"--- Querying document: {doc_path} ---")
+        if not os.path.exists(doc_path):
+            return "Error: Document not found."
 
-    except Exception as e:
-        print(f"Error in query_document: {e}")
-        return "Error while processing the document."
+        try:
+            reader = SimpleDirectoryReader(input_files=[doc_path])
+            docs = reader.load_data()
+            index = VectorStoreIndex.from_documents(docs)
+            
+            # Create Query Engine with our custom prompt
+            query_engine = index.as_query_engine(
+                response_mode="compact",
+                #text_qa_template=qa_template  # <-- USE CUSTOM PROMPT
+            )
+            
+            response = query_engine.query(question)
+            return str(response)
+
+        except Exception as e:
+            print(f"Error in query_document: {e}")
+            return "Error while processing the document."
 
 # ---------------------------------------------------------------------------
 # TEST CODE
