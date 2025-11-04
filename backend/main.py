@@ -3,7 +3,7 @@ import sys  # <-- EKLENDİ
 import uvicorn
 import aiofiles
 from pathlib import Path  # <-- EKLENDİ
-TEST_MODE = True
+TEST_MODE = False
 # --- Path (Yol) Düzeltmesi (Daha Güçlü Versiyon) ---
 # 'main.py' dosyasının bulunduğu dizini ve onun bir üst dizinini Python yoluna ekle.
 current_file_path = Path(__file__).resolve()
@@ -30,20 +30,8 @@ from werkzeug.utils import secure_filename
 from typing import Optional
 
 # Assume the rag_service is in a 'src' directory relative to this file
-# If not, adjust the import path
-try:
-    from src.rag_service import query_document, plain_chat, query_online
-except ImportError as e: # <-- Hatayı yakalamak için 'e' eklendi
-    # Provide dummy functions if the import fails, so the app can still be reviewed
-    print(f"Warning: 'src.rag_service' not found. Error: {e}") # <-- Hata mesajı eklendi
-    print("\n--- IMPORT HATASI ---")
-    print("Gerçek 'src.rag_service' modülü bulunamadı.")
-    print("Lütfen 'src' klasörünün 'main.py' ile aynı dizinde (backend) VEYA bir üst dizinde (DI-502) olduğundan emin olun.")
-    print("AYRICA: 'src' klasörünün içinde '__init__.py' adında boş bir dosya olduğundan emin olun.")
-    print("Sahte (dummy) fonksiyonlar kullanılacak.\n")
-    def query_document(question, file_path): return f"Dummy answer for doc: {question}"
-    def plain_chat(question): return f"Dummy plain chat answer: {question}"
-    def query_online(question): return f"Dummy online answer: {question}"
+
+from backend.src.rag_service import query_document, plain_chat, query_online
 
 
 # --- App Setup ---
@@ -96,7 +84,9 @@ async def chat(
         elif document and document.filename:
             # Mod 2: Belge RAG
             # ...
-            answer = query_document(question, file_path, test=TEST_MODE)
+            answer = query_document(question, 
+                                    doc_path = r"/home/umut_dundar/repositories/economind/DI-502/apple_test.pdf",
+                                    test=TEST_MODE)
             
         else:
             # Mod 3: Düz Sohbet
