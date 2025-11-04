@@ -1,35 +1,130 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+import os
+import sys  # <-- EKLENDİ
+import uvicorn
+import aiofiles
+from pathlib import Path  # <-- EKLENDİ
+TEST_MODE = True
+# --- Path (Yol) Düzeltmesi (Daha Güçlü Versiyon) ---
+# 'main.py' dosyasının bulunduğu dizini ve onun bir üst dizinini Python yoluna ekle.
+current_file_path = Path(__file__).resolve()
+project_root = current_file_path.parent  # 'main.py'nin olduğu klasör (örn: .../backend)
+parent_root = project_root.parent         # Bir üst klasör (örn: .../DI-502)
+
+# Her iki yolu da (eğer zaten yoksa) ekle
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+if str(parent_root) not in sys.path:
+    sys.path.append(str(parent_root))
+# --- Path Düzeltmesi Sonu ---
 
 
-class ChatRequest(BaseModel):
-    query: str = Field(..., max_length=500)
+from fastapi import (
+    FastAPI, 
+    Request, 
+    Form, 
+    File, 
+    UploadFile, 
+    HTTPException
+)
+from werkzeug.utils import secure_filename
+from typing import Optional
+
+# Assume the rag_service is in a 'src' directory relative to this file
+# If not, adjust the import path
+try:
+    from src.rag_service import query_document, plain_chat, query_online
+except ImportError as e: # <-- Hatayı yakalamak için 'e' eklendi
+    # Provide dummy functions if the import fails, so the app can still be reviewed
+    print(f"Warning: 'src.rag_service' not found. Error: {e}") # <-- Hata mesajı eklendi
+    print("\n--- IMPORT HATASI ---")
+    print("Gerçek 'src.rag_service' modülü bulunamadı.")
+    print("Lütfen 'src' klasörünün 'main.py' ile aynı dizinde (backend) VEYA bir üst dizinde (DI-502) olduğundan emin olun.")
+    print("AYRICA: 'src' klasörünün içinde '__init__.py' adında boş bir dosya olduğundan emin olun.")
+    print("Sahte (dummy) fonksiyonlar kullanılacak.\n")
+    def query_document(question, file_path): return f"Dummy answer for doc: {question}"
+    def plain_chat(question): return f"Dummy plain chat answer: {question}"
+    def query_online(question): return f"Dummy online answer: {question}"
 
 
-class ChatResponse(BaseModel):
-    ai_response: str
-
+# --- App Setup ---
 
 app = FastAPI(
-    title="Financial Chatbot API",
-    description="An API for interacting with a local financial model.",
+    title="RAG API",
+    description="Belgelerle, çevrimiçi araştırmayla veya düz sohbetle sohbet edin.",
+    version="1.0.0"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8080"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configuration for uploads
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+
+# --- Routes ---
 
 @app.get("/")
-def read_root():
-    return {"status": "API is running"}
+async def root():
+    """
+    Kök endpoint. Basit bir karşılama mesajı ve belgelere yönlendirme sağlar.
+    """
+    return {
+        "message": "RAG API'ye hoş geldiniz. API belgelerini görmek için /docs veya /redoc adresini ziyaret edin."
+    }
 
 
-@app.post("/chat", response_model=ChatResponse)
-async def handle_chat(request: ChatRequest):
-    return ChatResponse(ai_response=f"Echo: {request.query}")
+@app.post("/chat")
+async def chat(
+    request: Request,
+    question: str = Form(...),
+    use_online_research: bool = Form(False),
+    document: Optional[UploadFile] = File(None)
+):
+    """
+    Ana sohbet endpoint'i. 
+    ...
+    """
+    
+    if not question:
+        raise HTTPException(status_code=400, detail="There is no question provided.")
+
+    file_path = None
+    
+    try:
+        if use_online_research:
+            # Mod 1: Çevrimiçi Araştırma RAG
+            answer = query_online(question,test=TEST_MODE)
+            
+        elif document and document.filename:
+            # Mod 2: Belge RAG
+            # ...
+            answer = query_document(question, file_path, test=TEST_MODE)
+            
+        else:
+            # Mod 3: Düz Sohbet
+            answer = plain_chat(question, test=TEST_MODE)
+            print(answer) # <-- Terminalde "Test response" yazıyor
+        
+        # --- ÇÖZÜM BURADA ---
+        # Frontend 'ai_response' bekliyor, 'answer' değil.
+        
+        # return {"answer": answer}  # <--- BU YANLIŞTI
+        return {"ai_response": answer} # <--- BUNUNLA DEĞİŞTİRİN
+
+    except Exception as e:
+        # Bu kısım doğru, frontend'deki 'catch' bloğu
+        # HTTP 500 hatasını yakalayacaktır.
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    finally:
+        # Yüklenen dosyayı varsa temizle
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Dosya temizlenirken hata oluştu {file_path}: {e}")
+
+
+# --- Sunucuyu Çalıştırma ---
+
+if __name__ == '__main__':
+    # 'main:app' 'main.py' dosyasındaki 'app' nesnesine atıfta bulunur
+    uvicorn.run("main:app", host='0.0.0.0', port=8000, reload=True)

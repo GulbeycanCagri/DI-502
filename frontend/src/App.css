@@ -23,30 +23,8 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 1fr;
   height: 100vh;
-}
-
-/* SIDEBAR */
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-}
-
-.side-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
 }
 
 .icon {
@@ -70,53 +48,6 @@ body {
   color: var(--bg);
 }
 
-.side-controls {
-  padding: 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 5px 8px;
-  margin-top: 8px;
-}
-
-.search input {
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text);
-  width: 100%;
-}
-
-.conv-list {
-  overflow: auto;
-  padding: 10px;
-}
-
-.conv {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px;
-  margin-bottom: 6px;
-  cursor: pointer;
-}
-
-.conv.active {
-  outline: 2px solid var(--primary);
-}
-
-.conv .meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  margin-top: 4px;
-}
 
 /* MAIN CHAT */
 .main {
@@ -200,7 +131,7 @@ body {
   40% { transform: scale(1); opacity: 1; }
 }
 
-/* COMPOSER */
+
 .composer {
   border-top: 1px solid var(--border);
   background: var(--bg);
@@ -252,4 +183,23 @@ body {
   font-size: 12px;
   background: #eef2ff;
   color: #3730a3;
+}
+
+.file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 800px;
+  padding: 5px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+
+.icon.active {
+  color: #3b82f6;
 }

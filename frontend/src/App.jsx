@@ -6,92 +6,81 @@ import "./App.css";
 const Icon = {
   Sun: (p) => <svg viewBox="0 0 24 24" width="20" height="20" {...p}><path fill="currentColor" d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 14.32l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM12 4V1h0v3h0zm0 19v-3h0v3h0zM4 12H1v0h3v0zm19 0h-3v0h3v0zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zM18.36 4.22l1.41-1.41 1.8 1.79-1.42 1.42-1.79-1.8zM12 7a5 5 0 100 10 5 5 0 000-10z"/></svg>,
   Moon: (p) => <svg viewBox="0 0 24 24" width="20" height="20" {...p}><path fill="currentColor" d="M21.75 15.5A9.75 9.75 0 1111.5 2.25a8 8 0 0010.25 13.25z"/></svg>,
-  Plus: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></svg>,
-  Trash: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM6 10h2v8H6v-8z"/></svg>,
   Send: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>,
   Mic: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M12 14a3 3 0 003-3V5a3 3 0 10-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0014 0h-2zM11 19h2v3h-2z"/></svg>,
-  Search: (p) => <svg viewBox="0 0 24 24" width="16" height="16" {...p}><path fill="currentColor" d="M10 18a8 8 0 105.3-14.3A8 8 0 0010 18zm11 3l-4.3-4.3" stroke="currentColor" strokeWidth="2"/></svg>,
   Dollar: (p) => <svg viewBox="0 0 24 24" width="20" height="20" {...p}><path fill="currentColor" d="M13 3h-2v2H9v2h2v10H9v2h2v2h2v-2h2v-2h-2V7h2V5h-2V3z"/></svg>,
+  Globe: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1h-2v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.62-1.23 4.96-3.1 6.39z"/></svg>,
+  Paperclip: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v11.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>,
+  Close: (p) => <svg viewBox="0 0 24 24" width="14" height="14" {...p}><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>,
 };
 
 const ROLE = { user: "user", assistant: "assistant", system: "system" };
 
 /** Call backend via proxy: POST /api/chat  ->  FastAPI /chat */
-async function callBackendChat(query) {
+async function callBackendChat(question, use_online_research, document) {
+  const formData = new FormData();
+  formData.append("question", question);
+  formData.append("use_online_research", String(use_online_research));
+  if (document) {
+    formData.append("document", document);
+  }
+
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: formData,
   });
+
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status} ${text}`);
   }
-  const data = await res.json(); // { ai_response: "..." }
+  const data = await res.json();
   return { id: Math.random().toString(36).slice(2), role: ROLE.assistant, content: data.ai_response };
 }
 
 export default function App() {
-  // theme
+  
   const [dark, setDark] = useState(false);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; }, [dark]);
 
-  // conversations
-  const [convs, setConvs] = useState([]);
-  const [activeId, setActiveId] = useState(null);
-  const active = useMemo(() => convs.find((c) => c.id === activeId) || null, [convs, activeId]);
+  const [messages, setMessages] = useState([]);
+
 
   // composer
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [useOnline, setUseOnline] = useState(false);
+  const [doc, setDoc] = useState(null);
+  const fileInputRef = useRef(null);
   const endRef = useRef(null);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [active?.messages?.length, sending]);
+  
+  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [messages.length, sending]);
 
-  function newChat(prefill = "") {
-    const id = Math.random().toString(36).slice(2);
-    const msgs = prefill ? [{ id: Date.now(), role: ROLE.user, content: prefill }] : [];
-    const conv = { id, title: prefill || "New chat", createdAt: Date.now(), messages: msgs };
-    setConvs((p) => [conv, ...p]);
-    setActiveId(id);
-  }
-
-  function deleteChat(id) {
-    setConvs((p) => p.filter((c) => c.id !== id));
-    if (id === activeId) setActiveId((prev) => (convs.find((c) => c.id !== id)?.id || null));
-  }
 
   async function sendMessage(text) {
-    if (!text.trim()) return;
-
-    // Ensure there is an active chat
-    let id = activeId;
-    if (!id) {
-      const nid = Math.random().toString(36).slice(2);
-      const conv = { id: nid, title: text.slice(0, 36) || "New chat", createdAt: Date.now(), messages: [] };
-      setConvs((p) => [conv, ...p]);
-      setActiveId(nid);
-      id = nid;
-    }
+    if (!text.trim() && !doc) return;
 
     setSending(true);
 
-    // append user message
-    const userMsg = { id: Math.random().toString(36).slice(2), role: ROLE.user, content: text };
-    setConvs((p) => p.map((c) => c.id === id
-      ? { ...c, title: c.title === "New chat" ? text.slice(0,36) : c.title, messages: [...c.messages, userMsg] }
-      : c
-    ));
+    let userContent = text;
+    if (doc) {
+      userContent = `${text}\n\n[Attached: ${doc.name}]`;
+    }
+    const userMsg = { id: Math.random().toString(36).slice(2), role: ROLE.user, content: userContent };
+    
+    setMessages(prev => [...prev, userMsg]);
 
     try {
-      // call backend via proxy
-      const reply = await callBackendChat(text);
-      setConvs((p) => p.map((c) => c.id === id ? { ...c, messages: [...c.messages, reply] } : c));
+      const reply = await callBackendChat(text, useOnline, doc);
+      setMessages(prev => [...prev, reply]);
     } catch (e) {
       const err = { id: Math.random().toString(36).slice(2), role: ROLE.assistant, content: `⚠️ Error: ${e?.message || 'Backend error'}` };
-      setConvs((p) => p.map((c) => c.id === id ? { ...c, messages: [...c.messages, err] } : c));
+      setMessages(prev => [...prev, err]);
     } finally {
       setSending(false);
       setInput("");
+      setDoc(null);
+      if (fileInputRef.current) fileInputRef.current.value = null;
     }
   }
 
@@ -102,50 +91,51 @@ export default function App() {
     "Which bond ETFs benefit if rates fall?",
   ];
 
+
+  function prefillInput(text) {
+    setInput(text);
+    // İsteğe bağlı: textarea'ya odaklan
+    // document.querySelector('.composer textarea')?.focus();
+  }
+
   return (
     <div className="app">
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="side-top">
-          <div className="brand"><Icon.Dollar /> <span>Finance Chat</span></div>
-          <button className="icon" onClick={() => setDark((d) => !d)}>{dark ? <Icon.Sun /> : <Icon.Moon />}</button>
-        </div>
-        <div className="side-controls">
-          <button className="btn primary" onClick={() => newChat("")}> <Icon.Plus /> New chat</button>
-          <div className="search"><Icon.Search /><input placeholder="Search chats" /></div>
-        </div>
-        <div className="conv-list">
-          {convs.length === 0 && <div className="empty">No conversations yet.</div>}
-          {convs.map((c) => (
-            <div key={c.id} className={`conv ${c.id === activeId ? "active" : ""}`} onClick={() => setActiveId(c.id)}>
-              <div className="title">{c.title}</div>
-              <div className="meta">{new Date(c.createdAt).toLocaleDateString()} <button className="icon" onClick={(e)=>{e.stopPropagation(); deleteChat(c.id);}}><Icon.Trash/></button></div>
-            </div>
-          ))}
-        </div>
-      </aside>
+      {/* <aside className="sidebar">
+        ...
+      </aside> 
+      */}
+      {/* --- */}
 
       {/* Main */}
       <section className="main">
         <div className="topbar">
           <div className="left"><strong>Finance Assistant</strong></div>
+          {/* Tema değiştirme butonu sidebar'dan buraya taşındı */}
+          <div className="right">
+            <button className="icon" onClick={() => setDark((d) => !d)}>{dark ? <Icon.Sun /> : <Icon.Moon />}</button>
+          </div>
         </div>
 
         <div className="messages">
-          {!active && (
+          {/* Boş ekran kontrolü 'messages.length'e göre yapılıyor */}
+          {messages.length === 0 && (
             <div className="empty-state">
               <div className="logo">💰</div>
               <h1>Ask finance anything</h1>
               <p>Real-time markets, fundamentals, portfolio ideas, macro insights.</p>
-              <div className="chiprow">{chips.map((c) => <button key={c} className="chip" onClick={() => newChat(c)}>{c}</button>)}</div>
+              {/* Chip'ler artık 'prefillInput' fonksiyonunu çağırıyor */}
+              <div className="chiprow">{chips.map((c) => <button key={c} className="chip" onClick={() => prefillInput(c)}>{c}</button>)}</div>
             </div>
           )}
 
-          {active && (
+          {/* Mesaj render etme işlemi 'messages' dizisine göre yapılıyor */}
+          {messages.length > 0 && (
             <div className="stack">
-              {active.messages.map((m) => (
+              {messages.map((m) => (
                 <div key={m.id} className={`bubble-row ${m.role === ROLE.user ? 'end' : ''}`}>
-                  <div className={`bubble ${m.role === ROLE.user ? 'user' : ''}`}>{m.content}</div>
+                  <div className={`bubble ${m.role === ROLE.user ? 'user' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
+                    {m.content}
+                  </div>
                 </div>
               ))}
               {sending && <div className="typing"><span className="dot"/><span className="dot"/><span className="dot"/><span className="label">Thinking…</span></div>}
@@ -155,10 +145,36 @@ export default function App() {
         </div>
 
         <div className="composer">
+          {doc && (
+            <div className="file-preview">
+              <span>{doc.name}</span>
+              <button className="icon" title="Remove file" onClick={() => { setDoc(null); if (fileInputRef.current) fileInputRef.current.value = null; }}>
+                <Icon.Close />
+              </button>
+            </div>
+          )}
           <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about stocks, ETFs, bonds, crypto, macro…" />
           <div className="send">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              style={{ display: 'none' }} 
+              onChange={(e) => setDoc(e.target.files[0] || null)} 
+            />
+            <button className="icon" title="Attach document" onClick={() => fileInputRef.current?.click()}>
+              <Icon.Paperclip />
+            </button>
+            <button 
+              className={`icon ${useOnline ? "active" : ""}`} 
+              title={`Online research: ${useOnline ? 'ON' : 'OFF'}`}
+              onClick={() => setUseOnline(v => !v)}
+            >
+              <Icon.Globe />
+            </button>
             <button className="icon" title="Voice"><Icon.Mic /></button>
-            <button className="btn primary" disabled={sending || !input.trim()} onClick={() => sendMessage(input)}><Icon.Send /> Send</button>
+            <button className="btn primary" disabled={sending || (!input.trim() && !doc)} onClick={() => sendMessage(input)}>
+              <Icon.Send /> Send
+            </button>
           </div>
         </div>
       </section>
