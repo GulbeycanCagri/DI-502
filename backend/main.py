@@ -32,16 +32,9 @@ from fastapi import (
 from werkzeug.utils import secure_filename
 from typing import Optional
 
-# Assuming we are importing RAG services for debugging.
-# Verify the actual paths according to your project.
-try:
-    from src.rag_service import query_document, plain_chat, query_online
-except ImportError:
-    print("Warning: src.rag_service modules could not be loaded. Test modules will be used.")
-    # Test functions prevent the main code from crashing
-    def query_document(q, p, test=False): return f"Document query: {q} (File: {p})"
-    def plain_chat(q, test=False): return f"Plain chat: {q}"
-    def query_online(q, test=False): return f"Online research: {q}"
+# Assume the rag_service is in a 'src' directory relative to this file
+
+from backend.src.rag_service import query_document, plain_chat, query_online
 
 
 # --- App Setup ---

@@ -39,7 +39,7 @@ DEFAULT_QA_PROMPT_TMPL = (
     "5. If the context does not contain the answer, state that clearly.\n\n"
     "ANSWER (must be in English):\n"
 )
-#qa_template = PromptTemplate(DEFAULT_QA_PROMPT_TMPL)
+qa_template = PromptTemplate(DEFAULT_QA_PROMPT_TMPL)
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
