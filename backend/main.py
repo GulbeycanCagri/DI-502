@@ -1,21 +1,24 @@
 import os
-import sys  # <-- EKLENDİ
+import sys
 import uvicorn
 import aiofiles
-from pathlib import Path  # <-- EKLENDİ
-TEST_MODE = False
-# --- Path (Yol) Düzeltmesi (Daha Güçlü Versiyon) ---
-# 'main.py' dosyasının bulunduğu dizini ve onun bir üst dizinini Python yoluna ekle.
-current_file_path = Path(__file__).resolve()
-project_root = current_file_path.parent  # 'main.py'nin olduğu klasör (örn: .../backend)
-parent_root = project_root.parent         # Bir üst klasör (örn: .../DI-502)
+import uuid  # <-- Required: To create unique filenames
+from pathlib import Path 
 
-# Her iki yolu da (eğer zaten yoksa) ekle
+TEST_MODE = False
+
+# --- Path Correction (More Robust Version) ---
+# Add the directory containing 'main.py' and its parent directory to the Python path.
+current_file_path = Path(__file__).resolve()
+project_root = current_file_path.parent  # Folder where 'main.py' is (e.g., .../backend)
+parent_root = project_root.parent         # Parent folder (e.g., .../DI-502)
+
+# Add both paths (if they are not already present)
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 if str(parent_root) not in sys.path:
     sys.path.append(str(parent_root))
-# --- Path Düzeltmesi Sonu ---
+# --- End Path Correction ---
 
 
 from fastapi import (
@@ -38,7 +41,7 @@ from backend.src.rag_service import query_document, plain_chat, query_online
 
 app = FastAPI(
     title="RAG API",
-    description="Belgelerle, çevrimiçi araştırmayla veya düz sohbetle sohbet edin.",
+    description="Chat with documents, online research, or plain chat.",
     version="1.0.0"
 )
 
@@ -52,10 +55,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 @app.get("/")
 async def root():
     """
-    Kök endpoint. Basit bir karşılama mesajı ve belgelere yönlendirme sağlar.
+    Root endpoint. Provides a simple welcome message and directs to the docs.
     """
     return {
-        "message": "RAG API'ye hoş geldiniz. API belgelerini görmek için /docs veya /redoc adresini ziyaret edin."
+        "message": "Welcome to the RAG API. Visit /docs or /redoc to see the API documentation."
     }
 
 
@@ -67,54 +70,67 @@ async def chat(
     document: Optional[UploadFile] = File(None)
 ):
     """
-    Ana sohbet endpoint'i. 
-    ...
+    Main chat endpoint. 
+    Receives a question and does the following:
+    1. If 'use_online_research' is True: Performs online research.
+    2. If 'document' is provided: Saves the document and queries it with RAG.
+    3. If neither: Returns a plain chat response.
     """
     
     if not question:
         raise HTTPException(status_code=400, detail="There is no question provided.")
 
-    file_path = None
-    
     try:
         if use_online_research:
-            # Mod 1: Çevrimiçi Araştırma RAG
-            answer = query_online(question,test=TEST_MODE)
+            print("--- Performing Online Research ---")
+            answer = query_online(question, test=TEST_MODE)
             
         elif document and document.filename:
-            # Mod 2: Belge RAG
-            # ...
-            answer = query_document(question, 
-                                    doc_path = r"/home/umut_dundar/repositories/economind/DI-502/apple_test.pdf",
-                                    test=TEST_MODE)
+            print(f"--- Document Received: {document.filename} ---")
+            
+            # 1. Create a secure and unique file path
+            base_filename = secure_filename(document.filename)
+            unique_filename = f"{uuid.uuid4()}_{base_filename}"
+            file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+
+            # 2. Save the file asynchronously to the 'uploads' folder
+            try:
+                print(f"Saving file to: {file_path}")
+                async with aiofiles.open(file_path, 'wb') as f:
+                    while chunk := await document.read(1024 * 1024):  # Read in 1MB chunks
+                        await f.write(chunk)
+            except Exception as e:
+                print(f"File saving error: {e}")
+                raise HTTPException(status_code=500, detail=f"An error occurred while saving the file: {e}")
+            finally:
+                await document.close() # Always close the stream
+
+            # 3. After the file is saved, query it with RAG
+            print(f"Querying file: {file_path}")
+            answer = query_document(question, file_path, test=TEST_MODE)
             
         else:
-            # Mod 3: Düz Sohbet
+            print("--- Plain Chat ---")
             answer = plain_chat(question, test=TEST_MODE)
-            print(answer) # <-- Terminalde "Test response" yazıyor
         
-        # --- ÇÖZÜM BURADA ---
-        # Frontend 'ai_response' bekliyor, 'answer' değil.
-        
-        # return {"answer": answer}  # <--- BU YANLIŞTI
-        return {"ai_response": answer} # <--- BUNUNLA DEĞİŞTİRİN
+        # Return the successful response
+        return {"ai_response": answer}
 
+    except HTTPException as e:
+        # Re-raise FastAPI's HTTP errors
+        raise e
     except Exception as e:
-        # Bu kısım doğru, frontend'deki 'catch' bloğu
-        # HTTP 500 hatasını yakalayacaktır.
-        raise HTTPException(status_code=500, detail=str(e))
+        # Catch all other unexpected errors
+        print(f"Server Error: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
     
-    finally:
-        # Yüklenen dosyayı varsa temizle
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception as e:
-                print(f"Dosya temizlenirken hata oluştu {file_path}: {e}")
+    # 'finally' block was removed. The file will remain in the 'uploads' folder.
 
 
-# --- Sunucuyu Çalıştırma ---
+# --- Running the Server ---
 
 if __name__ == '__main__':
-    # 'main:app' 'main.py' dosyasındaki 'app' nesnesine atıfta bulunur
+    print(f"Starting server at http://0.0.0.0:8000...")
+    print(f"Uploads will be saved to the '{UPLOAD_FOLDER}' directory.")
+    # 'main:app' refers to the 'app' object in the 'main.py' file
     uvicorn.run("main:app", host='0.0.0.0', port=8000, reload=True)
