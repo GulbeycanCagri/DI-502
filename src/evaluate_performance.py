@@ -38,10 +38,10 @@ def get_model():
         model_id,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        quantization_config=quant_config,
+        #quantization_config=quant_config,
     )
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.chat_template = None  # Disable built-in chat format
+    tokenizer.chat_template = None  
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     return model, tokenizer

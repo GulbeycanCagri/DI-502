@@ -1,24 +1,24 @@
+import json
 import os
 import re
-import json
 import time
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urljoin
 
 import google.generativeai as genai
 import requests
+import sec_parser as sp
 import yfinance as yf
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from newspaper import Article, Config
-from tqdm import tqdm
-
-
-import sec_parser as sp
-from sec_parser.exceptions import SecParserError
 from sec_downloader import Downloader
 from sec_parser import TreeBuilder
-from sec_parser.semantic_elements import TextElement
+from sec_parser.exceptions import SecParserError
+from tqdm import tqdm
+
 
 class FinancialNewsAnnotator:
     def __init__(self, api_key=None, model_name="gemini-flash-latest", sleep_time=1.5):
@@ -44,64 +44,94 @@ class FinancialNewsAnnotator:
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         }
-        self.sec_headers = {
-            "User-Agent": "Economind Project economind@example.com"
-        }
+        self.sec_headers = {"User-Agent": "Economind Project economind@example.com"}
 
-       
         self.newspaper_config = Config()
         self.newspaper_config.browser_user_agent = self.headers["User-Agent"]
         self.newspaper_config.request_timeout = 20
 
-        
         self.sec_downloader = Downloader("Economind Team", "e274086@metu.edu.tr")
-    
-        # ----------------------------------
 
-    # ==================================================================
-    # SECTION 1: SEC EDGAR FUNCTIONS
-    # ==================================================================
+    def get_company_filings(
+        self, cik, form_type="8-K", limit=10, before_date=None, after_date=None
+    ):
+        """
+        Fetch SEC filings for a given CIK with optional date filters.
 
-    def get_company_filings(self, cik, form_type="8-K", limit=10):
-       
+        Args:
+            cik (str or int): Company CIK number.
+            form_type (str): SEC form type, e.g., "10-K", "8-K", "10-Q".
+            limit (int): Max number of filings to return.
+            before_date (str): Optional filter. Include only filings before this date (format: 'YYYY-MM-DD').
+            after_date (str): Optional filter. Include only filings after this date (format: 'YYYY-MM-DD').
+
+        Returns:
+            list[dict]: Filtered filings.
+        """
         cik10 = f"{int(cik):010d}"
         cik_int = int(cik)
         json_url = f"https://data.sec.gov/submissions/CIK{cik10}.json"
         filings = []
+
+        # Convert date strings to datetime objects for comparison
+        before_dt = datetime.strptime(before_date, "%Y-%m-%d") if before_date else None
+        after_dt = datetime.strptime(after_date, "%Y-%m-%d") if after_date else None
+
         try:
             r = requests.get(json_url, headers=self.sec_headers, timeout=10)
             r.raise_for_status()
             data = r.json()
             filings_data = data.get("filings", {}).get("recent", {})
+
             forms = filings_data.get("form", [])
             accession_nums = filings_data.get("accessionNumber", [])
             primary_docs = filings_data.get("primaryDocument", [])
             filing_dates = filings_data.get("filingDate", [])
+
             for i, form in enumerate(forms):
-                if form == form_type:
-                    acc, doc, date = accession_nums[i], primary_docs[i], filing_dates[i]
-                    if not doc:
-                        continue
-                    filings.append(
-                        {
-                            "company": data["name"],
-                            "cik": cik10,
-                            "form": form_type,
-                            "date": date,
-                            "wrapper_url": f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc.replace('-', '')}/{doc}",
-                        }
-                    )
+                if form != form_type:
+                    continue
+
+                acc, doc, date_str = accession_nums[i], primary_docs[i], filing_dates[i]
+                if not (acc and doc and date_str):
+                    continue
+
+                # Parse filing date for filtering
+                try:
+                    filing_dt = datetime.strptime(date_str, "%Y-%m-%d")
+                except ValueError:
+                    continue
+
+                # Apply optional date filters
+                if before_dt and filing_dt >= before_dt:
+                    continue
+                if after_dt and filing_dt <= after_dt:
+                    continue
+
+                filings.append(
+                    {
+                        "company": data["name"],
+                        "cik": cik10,
+                        "form": form_type,
+                        "date": date_str,
+                        "wrapper_url": f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc.replace('-', '')}/{doc}",
+                    }
+                )
+
                 if len(filings) >= limit:
                     break
+
             if not filings:
-                print(f"ℹ️ [SEC] No {form_type} filings found for CIK {cik10}.")
+                print(
+                    f"ℹ️ [SEC] No {form_type} filings found for CIK {cik10} with given filters."
+                )
             return filings
+
         except Exception as e:
             print(f"❌ [SEC] Request error for CIK {cik10}: {e}")
             return []
 
     def extract_exhibit_text(self, wrapper_url):
-
         try:
             r = requests.get(wrapper_url, headers=self.headers, timeout=20)
             soup = BeautifulSoup(r.text, "html.parser")
@@ -164,9 +194,9 @@ class FinancialNewsAnnotator:
             print(f"ℹ️ [sec-parser] Downloading and Parsing: {filing_url}")
 
             r = requests.get(filing_url, headers=self.sec_headers, timeout=20)
-            r.raise_for_status() 
+            r.raise_for_status()
             filing_html = r.text
-            
+
             if not filing_html:
                 print(f"⚠️ [requests] Downloaded HTML from {filing_url} is empty.")
                 return None
@@ -177,41 +207,46 @@ class FinancialNewsAnnotator:
             tree = TreeBuilder().build(elements)
 
             target_item_patterns = [
-                # Matches "Item 1A", "Item 1A.", "ITEM 1A", etc.
+                # Most specific patterns first
+                # Matches "Item 1A", "Item 1A.", etc. (Risk Factors)
                 re.compile(r"^\s*Item 1A\b", re.IGNORECASE),
-                
-                # Matches "Item 7", "Item 7.", "ITEM 7", etc.
+                # Matches "Item 7A", "Item 7A.", etc. (Market Risk)
+                re.compile(r"^\s*Item 7A\b", re.IGNORECASE),
+                # Less specific patterns last
+                # Matches "Item 1", "Item 1.", etc. (Business Overview)
+                # This comes *after* 1A so it doesn't match "Item 1A"
+                re.compile(r"^\s*Item 1\b", re.IGNORECASE),
+                # Matches "Item 2", "Item 2.", etc. (MD&A for 10-Q)
+                re.compile(r"^\s*Item 2\b", re.IGNORECASE),
+                # Matches "Item 3", "Item 3.", etc. (Legal Proceedings)
+                re.compile(r"^\s*Item 3\b", re.IGNORECASE),
+                # Matches "Item 7", "Item 7.", etc. (MD&A for 10-K)
+                # This comes *after* 7A
                 re.compile(r"^\s*Item 7\b", re.IGNORECASE),
-                
-                # Matches "Item 2", "Item 2.", "ITEM 2" (for 10-Q reports)
-                re.compile(r"^\s*Item 2\b", re.IGNORECASE)
             ]
             # --------------------------------
-            
+
             extracted_texts = []
-            
+
             # 5. Iterate through the tree nodes (sections) to find our targets
             for node in tree.nodes:
                 node_title = node.text.strip()
-                
+
                 # Check if this node's title matches ANY of our simple patterns
                 for pattern in target_item_patterns:
                     if pattern.search(node_title):
                         print(f"ℹ️ [sec-parser] Found matching section: {node_title}")
-                        
+
                         # Get all text elements within this section (node)
                         section_texts = [
-                            element.text 
-                            for element in node.get_descendants() 
-                           
+                            element.text for element in node.get_descendants()
                         ]
-                        
+
                         full_section_text = " ".join(section_texts)
                         extracted_texts.append(full_section_text)
-                        
-                        # Once matched, stop checking other patterns for this node
-                        break 
-            
+
+                        break
+
             if not extracted_texts:
                 print(
                     f"⚠️ [sec-parser] No Item 1A, Item 7, or Item 2 found in {filing_url}"
@@ -238,12 +273,8 @@ class FinancialNewsAnnotator:
         except Exception as e:
             print(f"❌ [sec-parser] General error processing {filing_url}: {e}")
             return None
-    # ==================================================================
-    # SECTION 2: YAHOO FINANCE FUNCTIONS
-    # ==================================================================
 
     def get_yfinance_news_links(self, ticker, limit=10):
-        # This function is unchanged.
         print(f"ℹ️ [yfinance] Fetching news links for {ticker}...")
         try:
             ticker_obj = yf.Ticker(ticker)
@@ -267,7 +298,9 @@ class FinancialNewsAnnotator:
                 full_url = None
                 if isinstance(canonical_url, dict) and canonical_url.get("url"):
                     full_url = canonical_url["url"]
-                elif isinstance(click_through_url, dict) and click_through_url.get("url"):
+                elif isinstance(click_through_url, dict) and click_through_url.get(
+                    "url"
+                ):
                     full_url = click_through_url["url"]
 
                 if not full_url or not title:
@@ -285,7 +318,6 @@ class FinancialNewsAnnotator:
             return []
 
     def extract_article_text(self, article_url):
-        # This function is unchanged.
         try:
             article = Article(article_url, config=self.newspaper_config)
             article.download()
@@ -303,12 +335,7 @@ class FinancialNewsAnnotator:
             print(f"❌ [newspaper3k] Failed to parse article from {article_url}: {e}")
             return None
 
-    # ==================================================================
-    # SECTION 3: COMMON FUNCTIONS
-    # ==================================================================
-
     def clean_text(self, text, stop_phrases):
-        # This function is unchanged.
         clean_text = text
         for phrase in stop_phrases:
             if phrase in clean_text:
@@ -316,14 +343,23 @@ class FinancialNewsAnnotator:
         return clean_text
 
     def generate_combined_annotations(self, text, company_info, date_info):
-       
         prompt = f"""
-You are an expert financial analyst. Your task is to create a high-quality training dataset sample from the following financial document.
+You are an expert financial analyst. Your task is to create a high-quality training dataset sample requiring deep analytical inference from the following financial document.
 The document is regarding {company_info}, from {date_info}.
 
 Read the text and generate:
-1.  A concise 2-3 sentence "Key Insight" focusing on the most critical information (e.g., risks, strategy, or results).
-2.  Two (2) factual question-answer pairs (Q&A) that a financial analyst would find insightful. The questions must be answerable *only* from the provided text, and the answers must be accurate.
+1. A concise 2-3 sentence "Key Insight" focusing on the most critical information (e.g., risks, strategy, or results).
+2. Two (2) factual question-answer pairs (Q&A) that require analytical depth and synthesis.
+
+### Instructions to Increase Question Difficulty (Requiring Analytical Inference)
+
+It is mandatory that your questions avoid being easily answerable by simple RAG (Direct Retrieval) mechanisms. The questions must:
+
+a) **Require Multi-Step Synthesis:** To answer the question, the model must synthesize or combine **at least two separate pieces of information (A and B)** from different sentences or sections of the text to arrive at the final answer (C).
+b) **Mandatory Inference/Calculation:** The question must target an outcome that is **not explicitly stated** but is definitively calculable or logically inferable based on the data presented in the text. (e.g., combining 'cost from Section A' and 'revenue loss from Section B' to determine the 'Total Net Impact').
+c) **Constraint Reinforcement:** The answers must be accurately and definitively verifiable *only* using the information provided within the text. The answers must be factual.
+
+3. The two Q&A pairs must cover distinct aspects of the document (e.g., one risk, one financial outcome) and must strictly avoid overly generic, single-sentence lookup questions.
 
 Return your output as a single, valid JSON object with the keys "key_insights" and "qa_pairs".
 
@@ -344,17 +380,27 @@ Return your output as a single, valid JSON object with the keys "key_insights" a
             print("Raw output:", getattr(response, "text", "No response text"))
             return None
 
-    # ==================================================================
-    # SECTION 4: MAIN PIPELINE FUNCTIONS
-    # ==================================================================
-
     def annotate_company(
-        self, cik, form_type="10-K", limit=5, output_path="sec_dataset.json"
+        self,
+        cik,
+        form_type="10-K",
+        before_date: Optional[str] = None,
+        after_date: Optional[str] = None,
+        limit=5,
+        output_path="sec_dataset.json",
     ):
-        # --- UPDATED with routing logic for 8-K vs 10-K ---
         print(f"--- STARTING: SEC {form_type} Workflow (CIK: {cik}) ---")
 
-        filings = self.get_company_filings(cik, form_type=form_type, limit=limit)
+        filings = self.get_company_filings(
+            cik,
+            form_type=form_type,
+            before_date=before_date,
+            after_date=after_date,
+            limit=limit,
+        )
+        for f in filings:
+            print(f["wrapper_url"])
+
         annotated_dataset = []
         if not filings:
             print(f"[SEC] No {form_type} filings found to process. Exiting.")
@@ -369,13 +415,10 @@ Return your output as a single, valid JSON object with the keys "key_insights" a
 
         for f in tqdm(filings, desc=f"[SEC] Processing {form_type} Filings"):
             text = None
-            
-            
+
             if form_type == "8-K":
-                
                 text = self.extract_exhibit_text(f["wrapper_url"])
             elif form_type in ("10-K", "10-Q"):
-                
                 text = self.extract_10k_report_items(f["wrapper_url"])
             else:
                 print(f"⚠️ Unsupported form type: {form_type}. Skipping.")
@@ -407,7 +450,7 @@ Return your output as a single, valid JSON object with the keys "key_insights" a
                         "date": f["date"],
                         "url": f["wrapper_url"],
                         "context": clean_text,
-                        "key_insights": annotations.get("key_insights"), # Updated key
+                        "key_insights": annotations.get("key_insights"),  # Updated key
                         "qa_pairs": annotations.get("qa_pairs"),
                     }
                 )
@@ -416,10 +459,11 @@ Return your output as a single, valid JSON object with the keys "key_insights" a
         output_file = Path(output_path)
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(annotated_dataset, f, indent=2, ensure_ascii=False)
-        print(f"✅ [SEC] {len(annotated_dataset)} {form_type} samples saved to {output_file.name}.")
+        print(
+            f"✅ [SEC] {len(annotated_dataset)} {form_type} samples saved to {output_file.name}."
+        )
 
     def annotate_yahoo_news(self, ticker, limit=5, output_path="yahoo_dataset.json"):
-       
         print(f"--- STARTING: Yahoo Finance Workflow (Ticker: {ticker}) ---")
         links = self.get_yfinance_news_links(ticker, limit=limit)
         annotated_dataset = []
@@ -462,7 +506,7 @@ Return your output as a single, valid JSON object with the keys "key_insights" a
                         "title": link["title"],
                         "url": link["url"],
                         "context": clean_text,
-                        "key_insights": annotations.get("key_insights"), # Updated key
+                        "key_insights": annotations.get("key_insights"),  # Updated key
                         "qa_pairs": annotations.get("qa_pairs"),
                     }
                 )
@@ -471,35 +515,55 @@ Return your output as a single, valid JSON object with the keys "key_insights" a
         output_file = Path(output_path)
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(annotated_dataset, f, indent=2, ensure_ascii=False)
-        print(f"✅ [Yahoo] {len(annotated_dataset)} samples saved to {output_file.name}.")
+        print(
+            f"✅ [Yahoo] {len(annotated_dataset)} samples saved to {output_file.name}."
+        )
 
 
 if __name__ == "__main__":
     annotator = FinancialNewsAnnotator()
 
-    # Task 1: Generate 3 full-text examples from SEC 10-K reports for Apple (AAPL)
-    # This will now use the new 'extract_10k_report_items' method
-    annotator.annotate_company(
-        cik="0000320193",
-        form_type="10-K",  # Changed from 8-K to 10-K
-        limit=3,
-        output_path="apple_SEC_10K_dataset.json",
-    )
+    # TODO: Adjust CIKs and parameters as needed
+    companies = {
+        "Apple": "0000320193",
+        "Microsoft": "0000789019",
+        "NVIDIA": "0001045810",
+        "Tesla": "0001318605",
+        "Amazon": "0001018724",
+        "Alphabet": "0001652044",
+        "Meta": "0001326801",
+        "Intel": "0000050863",
+        "Netflix": "0001065280",
+        "Adobe": "0000796343",
+        "Walmart": "0000104169",
+        "JPMorgan Chase & Co.": "0000019617",
+        "Visa Inc.": "0001403161",
+        "Broadcom Inc.": "0001715729",
+        "Exxon Mobil Corporation": "0000034088",
+        "Salesforce": "0001108524",
+        "PayPal Holdings, Inc.": "0001633917",
+        "Starbucks Corporation": "0000877782",
+        "The Walt Disney Company": "0001001039",
+        "Boeing Company": "0000012927",
+    }
+
+    test_dataset_path = "test_SEC_10K_dataset"
+    os.makedirs(test_dataset_path, exist_ok=True)
+    for name, cik in companies.items():
+        annotator.annotate_company(
+            cik=cik,
+            form_type="10-K",
+            limit=15,
+            before_date="2025-01-01",
+            output_path=os.path.join(
+                test_dataset_path, f"{name.lower()}_SEC_10K_dataset.json"
+            ),
+        )
 
     print("\n" + "=" * 50 + "\n")
 
-    # Task 2: Generate 3 full-text examples from Yahoo Finance news for NVIDIA (NVDA)
     # annotator.annotate_yahoo_news(
-    #     ticker="NVDA", limit=3, output_path="nvidia_YAHOO_dataset.json"
+    #     ticker="NVDA", limit=10, output_path="nvidia_YAHOO_dataset.json"
     # )
 
     # print("\n" + "=" * 50 + "\n")
-
-    # Task 3: Generate 3 full-text examples from SEC 8-K reports for Microsoft (MSFT)
-    # This will still use the original 'extract_exhibit_text' method
-    # annotator.annotate_company(
-    #     cik="0000789019",
-    #     form_type="8-K",
-    #     limit=3,
-    #     output_path="msft_SEC_8K_dataset.json",
-    # )
