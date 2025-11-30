@@ -39,7 +39,7 @@ async function callBackendChat(question, use_online_research, document) {
 }
 
 export default function App() {
-  
+
   const [dark, setDark] = useState(false);
   useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; }, [dark]);
 
@@ -53,7 +53,7 @@ export default function App() {
   const [doc, setDoc] = useState(null);
   const fileInputRef = useRef(null);
   const endRef = useRef(null);
-  
+
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [messages.length, sending]);
 
 
@@ -67,7 +67,7 @@ export default function App() {
       userContent = `${text}\n\n[Attached: ${doc.name}]`;
     }
     const userMsg = { id: Math.random().toString(36).slice(2), role: ROLE.user, content: userContent };
-    
+
     setMessages(prev => [...prev, userMsg]);
 
     try {
@@ -102,7 +102,7 @@ export default function App() {
     <div className="app">
       {/* <aside className="sidebar">
         ...
-      </aside> 
+      </aside>
       */}
       {/* --- */}
 
@@ -155,17 +155,17 @@ export default function App() {
           )}
           <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about stocks, ETFs, bonds, crypto, macro…" />
           <div className="send">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              style={{ display: 'none' }} 
-              onChange={(e) => setDoc(e.target.files[0] || null)} 
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              onChange={(e) => setDoc(e.target.files[0] || null)}
             />
             <button className="icon" title="Attach document" onClick={() => fileInputRef.current?.click()}>
               <Icon.Paperclip />
             </button>
-            <button 
-              className={`icon ${useOnline ? "active" : ""}`} 
+            <button
+              className={`icon ${useOnline ? "active" : ""}`}
               title={`Online research: ${useOnline ? 'ON' : 'OFF'}`}
               onClick={() => setUseOnline(v => !v)}
             >

@@ -83,7 +83,7 @@
             justify-content: space-between;
             align-items: center;
         }
-        
+
         #chat-header h1 {
             font-size: 1.5rem;
         }
@@ -161,7 +161,7 @@
             color: var(--bot-bubble-text);
             align-self: flex-start;
         }
-        
+
         .bot-message.loading {
             display: flex;
             align-items: center;
@@ -200,7 +200,7 @@
             color: var(--text-color);
             font-size: 1rem;
         }
-        
+
         #chat-form input[type="text"]:focus {
             outline: none;
         }
@@ -215,7 +215,7 @@
             align-items: center;
             justify-content: center;
         }
-        
+
         #chat-form button:hover, #chat-form label:hover {
             color: var(--link-color);
         }
@@ -224,7 +224,7 @@
             width: 24px;
             height: 24px;
         }
-        
+
         #document-name {
             font-style: italic;
             font-size: 0.8rem;
@@ -235,7 +235,7 @@
             text-overflow: ellipsis;
             max-width: 150px;
         }
-        
+
         input[type="file"] {
             display: none;
         }
@@ -335,7 +335,7 @@
                 addMessage("Please enter a question.", "bot");
                 return;
             }
-            
+
             // Clear file input if online research is checked
             if (useOnlineResearch) {
                 documentInput.value = ""; // Clear file selection
@@ -347,10 +347,10 @@
                 addMessage(question, "user");
                 questionInput.value = '';
                 const loadingMessageId = addLoadingMessage();
-                
+
                 const formData = new FormData();
                 formData.append('question', question);
-                
+
                 await sendRequest(formData, loadingMessageId);
                 return;
             }
@@ -367,7 +367,7 @@
             if (useOnlineResearch) {
                 formData.append('online_research', 'true');
             }
-            
+
             await sendRequest(formData, loadingMessageId);
         });
 
