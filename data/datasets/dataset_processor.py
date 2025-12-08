@@ -546,8 +546,9 @@ if __name__ == "__main__":
         "The Walt Disney Company": "0001001039",
         "Boeing Company": "0000012927",
     }
+    # The program should be started from the main directory of the project
 
-    test_dataset_path = "test_SEC_10K_dataset"
+    test_dataset_path = "data/datasets/test_SEC_10K_dataset"
     os.makedirs(test_dataset_path, exist_ok=True)
     for name, cik in companies.items():
         annotator.annotate_company(

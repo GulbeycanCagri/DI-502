@@ -234,7 +234,8 @@ if __name__ == "__main__":
     
     final_results_evaluation = {}
     final_results_performance = {}
-    evaluation_data, results_performance = evaluate_rag_pipeline("test_SEC_10K_dataset")
+    # The program should be started from the main directory of the project
+    evaluation_data, results_performance = evaluate_rag_pipeline("data/datasets/test_SEC_10K_dataset")
     if not evaluation_data["question"]:
         raise ValueError("No evaluation samples were generated. Check the evaluation dataset.")
     
