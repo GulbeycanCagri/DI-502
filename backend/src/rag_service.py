@@ -18,6 +18,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     pipeline,
+    BitsAndBytesConfig
 )
 
 load_dotenv()
@@ -51,18 +52,18 @@ def get_model():
     # It is commented out to disable quantization for better performance.
     # We can re-enable it later if needed.
 
-    # quant_config = BitsAndBytesConfig(
-    #     load_in_4bit=True,
-    #     bnb_4bit_compute_dtype=torch.bfloat16,
-    #     bnb_4bit_quant_type="nf4",
-    #     bnb_4bit_use_double_quant=True,
-    # )
+    quant_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True,
+    )
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        # quantization_config=quant_config, #
+        quantization_config=quant_config
     )
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     return model, tokenizer

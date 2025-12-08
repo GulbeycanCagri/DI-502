@@ -1,23 +1,27 @@
-# backend/requirements.txt
+# --- Backend (FastAPI) ---
 fastapi
 uvicorn[standard]
+python-multipart
+python-dotenv
+requests
+werkzeug
+
+pandas
 aiofiles
-# Core ML & Transformers
+pypdf
+huggingface-hub
+
+
+llama-index-core
+llama-index-readers-file
+
+llama-index-llms-ollama
+
+llama-index-embeddings-huggingface
+
 torch
 transformers
 accelerate
 bitsandbytes
-
-# LlamaIndex
-llama-index
-llama-index-llms-huggingface
-llama-index-embeddings-huggingface
-
-# Data Handling & API Requests
-pandas
-requests
-
-# Optional but recommended for document reading
-pypdf
-huggingface-hub
-python-dotenv
+protobuf
+scipy
