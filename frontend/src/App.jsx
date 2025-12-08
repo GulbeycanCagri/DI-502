@@ -16,7 +16,8 @@ const Icon = {
 
 const ROLE = { user: "user", assistant: "assistant", system: "system" };
 
-/** Call backend via proxy: POST /api/chat  ->  FastAPI /chat */
+const API_URL = "https://34.139.154.101.nip.io/chat";
+
 async function callBackendChat(question, use_online_research, document) {
   const formData = new FormData();
   formData.append("question", question);
@@ -25,7 +26,7 @@ async function callBackendChat(question, use_online_research, document) {
     formData.append("document", document);
   }
 
-  const res = await fetch("/api/chat", {
+  const res = await fetch(API_URL, {
     method: "POST",
     body: formData,
   });
