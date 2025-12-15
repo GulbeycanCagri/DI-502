@@ -3,7 +3,7 @@ name: CI Pipeline
 # Trigger the workflow on push or pull request to main/master branches
 on:
   push:
-    branches: [ "main", "master" ]
+    #branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
 
