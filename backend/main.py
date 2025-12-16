@@ -27,8 +27,7 @@ from typing import Optional
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from werkzeug.utils import secure_filename
 
-# Assume the rag_service is in a 'src' directory relative to this file
-from backend.src.rag_service import plain_chat, query_document, query_online
+from backend.src.rag_service_2 import plain_chat, query_document, query_online
 
 # --- App Setup ---
 

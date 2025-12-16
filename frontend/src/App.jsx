@@ -17,6 +17,8 @@ const Icon = {
 const ROLE = { user: "user", assistant: "assistant", system: "system" };
 
 const API_URL = "https://34.139.154.101.nip.io/chat";
+// const API_URL = "/api/chat"
+
 
 async function callBackendChat(question, use_online_research, document) {
   const formData = new FormData();
