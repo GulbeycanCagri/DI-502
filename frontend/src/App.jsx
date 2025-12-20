@@ -13,9 +13,8 @@ const Icon = {
 };
 
 const ROLE = { user: "user", assistant: "assistant" };
-//const API_URL = "/api/chat"; 
-const API_URL = "https://34.139.154.101.nip.io/chat";
-// const API_URL = "/api/chat"
+const API_URL = "/api/chat"; 
+//const API_URL = "https://34.139.154.101.nip.io/chat";
 
 
 async function streamBackendChat(question, use_online_research, document, signal, onChunk, onDone, onError) {
@@ -61,7 +60,7 @@ async function streamBackendChat(question, use_online_research, document, signal
 
     let userMessage = err.message;
     if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")) {
-      userMessage = "Connection Error: Cannot reach the backend. Is it running?";
+      userMessage = "Connection Error: Cannot reach the backend.";
     }
     console.error("Stream Error:", err);
     onError(new Error(userMessage));
