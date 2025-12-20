@@ -1,119 +1,46 @@
-# DI-502
-DI 502 Project Repository — RAG-based Chatbot for Answering Finance Questions
+# DI-502: Financial AI Assistant
+
+**DI 502 Project Repository** — An advanced RAG-based Chatbot & Market Researcher for answering finance questions.
+
+This project combines a high-performance **FastAPI** backend with a modern **React** frontend to provide real-time financial insights, document analysis (RAG), and live market research.
+
+---
 
 ## Features
 
-* **FastAPI Backend**: A lightweight web framework to serve the application and handle API requests.
-* **Llama 3 8B Integration**: Uses a 4-bit quantized version of `meta-llama/Meta-Llama-3-8B-Instruct` for efficient text generation.
-* **Retrieval-Augmented Generation (RAG)**: Leverages `llama-index` to answer questions based on the content of user-uploaded documents.
-* **Simple HTML/JS Frontend**: A clean, single-page interface for interacting with the chatbot.
-* **Robust Testing**: Includes a `pytest` suite with mocking capabilities to test API endpoints without loading heavy GPU models.
+### Backend (Python/FastAPI)
+* **Async Streaming API**: Delivers AI responses token-by-token (typewriter effect) using Server-Sent Events (SSE).
+* **RAG (Retrieval-Augmented Generation)**: Analyze user-uploaded documents (PDF, TXT) to answer context-specific questions.
+* **Online Market Research**: Fetches real-time financial news and data (e.g., via Finnhub) to answer current market queries.
+* **Llama 3 Integration**: Optimized for financial reasoning using Llama 3 (via Ollama or local quantization).
+* **Robust Testing**: Comprehensive `pytest` suite with async generator mocking.
+
+### Frontend (React/Vite)
+* **Modern UI**: Built with React and Vite for a fast, responsive experience.
+* **Smart Composer**: Supports file uploads, online research toggling, and prompt suggestions (chips).
+* **Markdown Rendering**: Renders tables, lists, and code blocks beautifully using `react-markdown`.
+* **Dark/Light Mode**: Fully themable interface with persistence.
+* **Interactive Controls**: Includes a **"Stop Generating"** feature to cancel requests mid-stream.
 
 ---
+
 ## Project Structure
 
-The repository is organized into a simple structure for a self-contained web application.
+The repository is organized into a clear separation of concerns between Client and Server.
 
 ```text
 .
 ├── backend/
-│   ├── src/            # Backend source code (rag_service.py, etc.)
-│   ├── uploads/        # Default location for file uploads
-│   ├── main.py         # FastAPI application entrypoint
-│   └── requirements.txt  # Backend Python dependencies
-├── tests/              # Test suite
-│   └── test_main.py    # API and Integration tests
-├── data/               # Persistent data (e.g., vector stores)
-├── frontend/           # Frontend application (React, Vue, etc.)
-├── templates/          # (Optional: e.g., for Jinja2 templates if used)
-├── .dockerignore
-├── .gitignore
-├── backend.Dockerfile    # Docker build instructions for the backend
-├── docker-compose.yaml   # Defines all services (backend, frontend, nginx)
-├── frontend.Dockerfile   # Docker build instructions for the frontend
-├── nginx.conf          # Nginx configuration for reverse proxy
+│   ├── src/              # Source code (rag_service, online_search, etc.)
+│   ├── uploads/          # Temporary storage for RAG documents
+│   ├── tests/            # Pytest suite (test_main.py)
+│   ├── main.py           # FastAPI application entrypoint
+│   └── requirements.txt  # Python dependencies
+├── frontend/
+│   ├── src/              # React source (App.jsx, components, hooks)
+│   ├── src/__tests__/    # Frontend tests (Vitest)
+│   ├── public/           # Static assets
+│   ├── package.json      # Node dependencies
+│   └── vite.config.js    # Vite configuration
+├── firebase.json         # Firebase hosting configuration
 └── README.md
-```
-## Getting Started
-
-Follow these instructions to get the project running on your local machine.
-
-### Prerequisites
-
-You'll need the following software installed:
-* [Python 3.10+](https://www.python.org/downloads/)
-* [Git](https://git-scm.com/)
-* An NVIDIA GPU is highly recommended for running the model (production mode).
-
-### Installation
-
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/GulbeycanCagri/DI-502.git](https://github.com/GulbeycanCagri/DI-502.git)
-    cd DI-502
-    ```
-
-2.  **Create and activate a Python virtual environment:**
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
-    # On Windows, use: .venv\Scripts\activate
-    ```
-
-3.  **Install dependencies:**
-    ```bash
-    # Install backend requirements
-    pip install -r backend/requirements.txt
-    
-    # Install testing requirements
-    pip install pytest httpx
-    ```
-    *Note: This step may take some time as it downloads several large libraries, including PyTorch.*
-
----
-## Usage
-
-1.  **Activate the virtual environment (if not already active):**
-    ```bash
-    source .venv/bin/activate
-    ```
-
-2.  **Run the FastAPI application:**
-    Use `uvicorn` to start the server. Run this command from the project root:
-    ```bash
-    uvicorn backend.main:app --reload
-    ```
-    The application will start, and the model will be loaded into memory. This may take a few moments.
-
-3.  **Access the chatbot:**
-    Open your web browser and navigate to `http://127.0.0.1:8000`.
-
-    You can now upload a document (`.pdf`, `.txt`, `.md`), ask a question about it, and receive an answer generated by the Llama 3 model.
-
----
-## Testing
-
-This project uses `pytest` for testing. The test suite is designed to be **lightweight and fast**.
-
-* **Mocking:** The heavy AI models (Llama 3, Transformers) are **mocked** during testing. This prevents GPU memory errors and allows tests to run instantly on any machine (even without a GPU).
-* **Coverage:** Tests cover API endpoints, file uploads, error handling (422/400 codes), and integration logic.
-
-To run the tests, execute the following command from the **project root directory**:
-
-```bash
-pytest
-```
----
----
-## API Endpoints
-
-The FastAPI application provides the following endpoints:
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/` | Serves the main chat page (`index.html`) or API root message. |
-| `POST` | `/chat` | Main RAG endpoint. Accepts form data: `question` (text), `use_online_research` (bool), and optional `document` (file upload). |
-| `GET` | `/docs` | Automatic interactive API documentation (Swagger UI). |
-| `GET` | `/redoc` | Alternative API documentation (ReDoc). ||
-
----

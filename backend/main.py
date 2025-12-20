@@ -1,15 +1,17 @@
 import os
 import sys
-import uuid  # <-- Required: To create unique filenames
+import uuid
 from pathlib import Path
+from typing import Optional
 
 import aiofiles
 import uvicorn
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware  # Import added
+from fastapi.responses import StreamingResponse
+from werkzeug.utils import secure_filename
 
-TEST_MODE = False
-
-# --- Path Correction (More Robust Version) ---
-# Add the directory containing 'main.py' and its parent directory to the Python path.
+# --- Path Correction
 current_file_path = Path(__file__).resolve()
 project_root = current_file_path.parent  # Folder where 'main.py' is (e.g., .../backend)
 parent_root = project_root.parent  # Parent folder (e.g., .../DI-502)
@@ -19,16 +21,10 @@ if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 if str(parent_root) not in sys.path:
     sys.path.append(str(parent_root))
-# --- End Path Correction ---
 
+from backend.src.rag_service_2 import plain_chat, query_document, query_online
 
-from typing import Optional
-
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from werkzeug.utils import secure_filename
-
-# Assume the rag_service is in a 'src' directory relative to this file
-from backend.src.rag_service import plain_chat, query_document, query_online
+TEST_MODE = False
 
 # --- App Setup ---
 
@@ -38,13 +34,31 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# --- CORS Setup ---
+origins = [
+    # 1. Production Site (Firebase)
+    "https://di502-economind.web.app",
+    
+    # 2. Localhost (To avoid errors during development)
+    "http://localhost:5173",  # Vite default
+    "http://localhost:3000",  # React default
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,     # Only allow listed origins
+    allow_credentials=True,
+    allow_methods=["*"],       # Allow all methods (GET, POST, OPTIONS, etc.)
+    allow_headers=["*"],       # Allow all headers
+)
+
 # Configuration for uploads
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 # --- Routes ---
-
 
 @app.get("/")
 async def root():
@@ -64,68 +78,69 @@ async def chat(
     document: Optional[UploadFile] = File(None),
 ):
     """
-    Main chat endpoint.
-    Receives a question and does the following:
-    1. If 'use_online_research' is True: Performs online research.
-    2. If 'document' is provided: Saves the document and queries it with RAG.
-    3. If neither: Returns a plain chat response.
+    Main chat endpoint (Async Streaming Version).
     """
-
+    
+    # --- 1. Validation ---
     if not question:
         raise HTTPException(status_code=400, detail="There is no question provided.")
 
-    try:
-        if use_online_research:
-            print("--- Performing Online Research ---")
-            answer = query_online(question, test=TEST_MODE)
-
-        elif document and document.filename:
+    # --- 2. File Handling (Pre-stream) ---
+    saved_file_path = None
+    
+    if document and document.filename:
+        try:
             print(f"--- Document Received: {document.filename} ---")
-
-            # 1. Create a secure and unique file path
             base_filename = secure_filename(document.filename)
             unique_filename = f"{uuid.uuid4()}_{base_filename}"
-            file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+            saved_file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
 
-            # 2. Save the file asynchronously to the 'uploads' folder
-            try:
-                print(f"Saving file to: {file_path}")
-                async with aiofiles.open(file_path, "wb") as f:
-                    while chunk := await document.read(
-                        1024 * 1024
-                    ):  # Read in 1MB chunks
-                        await f.write(chunk)
-            except Exception as e:
-                print(f"File saving error: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"An error occurred while saving the file: {e}",
-                )
-            finally:
-                await document.close()  # Always close the stream
+            print(f"Saving file to: {saved_file_path}")
+            async with aiofiles.open(saved_file_path, "wb") as f:
+                while chunk := await document.read(1024 * 1024):
+                    await f.write(chunk)
+            
+            await document.close()
+            
+        except Exception as e:
+            print(f"File saving error: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"An error occurred while saving the file: {e}",
+            )
 
-            # 3. After the file is saved, query it with RAG
-            print(f"Querying file: {file_path}")
-            answer = query_document(question, file_path, test=TEST_MODE)
+    # --- 3. Define the Async Generator ---
+    async def response_generator():
+        try:
+            if use_online_research:
+                print("--- Performing Online Research (Async Stream) ---")
+                async for chunk in query_online(question, test=TEST_MODE):
+                    yield chunk
 
-        else:
-            print("--- Plain Chat ---")
-            answer = plain_chat(question, test=TEST_MODE)
+            elif saved_file_path:
+                print(f"Querying file: {saved_file_path}")
+                async for chunk in query_document(question, saved_file_path, test=TEST_MODE):
+                    yield chunk
 
-        # Return the successful response
-        return {"ai_response": answer}
+            else:
+                print("--- Plain Chat (Async Stream) ---")
+                async for chunk in plain_chat(question, test=TEST_MODE):
+                    yield chunk
 
-    except HTTPException as e:
-        # Re-raise FastAPI's HTTP errors
-        raise e
-    except Exception as e:
-        # Catch all other unexpected errors
-        print(f"Server Error: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected server error occurred: {str(e)}"
-        )
+        except Exception as e:
+            print(f"Streaming Error or Disconnect: {e}")
+            yield f"\n[SYSTEM ERROR]: {str(e)}"
+        
+        finally:
+            if saved_file_path and os.path.exists(saved_file_path):
+                try:
+                    os.remove(saved_file_path)
+                    print(f"CLEANUP: Deleted file {saved_file_path}")
+                except Exception as cleanup_error:
+                    print(f"CLEANUP FAILED: {cleanup_error}")
 
-    # 'finally' block was removed. The file will remain in the 'uploads' folder.
+    # --- 4. Return the Stream ---
+    return StreamingResponse(response_generator(), media_type="text/event-stream")
 
 
 # --- Running the Server ---
