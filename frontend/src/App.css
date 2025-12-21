@@ -89,6 +89,27 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.topbar .left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.new-chat-btn {
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.new-chat-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.new-chat-btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: var(--bg);
+}
+
 .messages {
   flex: 1;
   overflow: auto;

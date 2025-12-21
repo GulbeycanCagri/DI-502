@@ -6,21 +6,44 @@ const Icon = {
   Sun: (p) => <svg viewBox="0 0 24 24" width="20" height="20" {...p}><path fill="currentColor" d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 14.32l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM12 4V1h0v3h0zm0 19v-3h0v3h0zM4 12H1v0h3v0zm19 0h-3v0h3v0zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zM18.36 4.22l1.41-1.41 1.8 1.79-1.42 1.42-1.79-1.8zM12 7a5 5 0 100 10 5 5 0 000-10z"/></svg>,
   Moon: (p) => <svg viewBox="0 0 24 24" width="20" height="20" {...p}><path fill="currentColor" d="M21.75 15.5A9.75 9.75 0 1111.5 2.25a8 8 0 0010.25 13.25z"/></svg>,
   Send: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>,
-  Stop: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><rect x="6" y="6" width="12" height="12" fill="currentColor" /></svg>, // YENİ STOP İKONU
+  Stop: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><rect x="6" y="6" width="12" height="12" fill="currentColor" /></svg>,
   Globe: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1h-2v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.62-1.23 4.96-3.1 6.39z"/></svg>,
   Paperclip: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v11.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>,
   Close: (p) => <svg viewBox="0 0 24 24" width="14" height="14" {...p}><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 17.59 13.41 12z"/></svg>,
+  NewChat: (p) => <svg viewBox="0 0 24 24" width="18" height="18" {...p}><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>,
 };
 
 const ROLE = { user: "user", assistant: "assistant" };
 const API_URL = "/api/chat"; 
 //const API_URL = "https://34.139.154.101.nip.io/chat";
 
+// Session storage key
+const SESSION_STORAGE_KEY = "economind_session_id";
 
-async function streamBackendChat(question, use_online_research, document, signal, onChunk, onDone, onError) {
+// Generate a UUID for new sessions
+function generateSessionId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Get or create session ID from localStorage
+function getOrCreateSessionId() {
+  let sessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!sessionId) {
+    sessionId = generateSessionId();
+    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  }
+  return sessionId;
+}
+
+async function streamBackendChat(question, use_online_research, document, sessionId, signal, onChunk, onSessionId, onDone, onError) {
   const formData = new FormData();
   formData.append("question", question);
   formData.append("use_online_research", String(use_online_research));
+  formData.append("session_id", sessionId);
   if (document) {
     formData.append("document", document);
   }
@@ -41,12 +64,27 @@ async function streamBackendChat(question, use_online_research, document, signal
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
+    let isFirstChunk = true;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      onChunk(chunk);
+      let chunk = decoder.decode(value, { stream: true });
+      
+      // Handle session ID from first chunk
+      if (isFirstChunk) {
+        const sessionMatch = chunk.match(/\[SESSION_ID:([^\]]+)\]/);
+        if (sessionMatch) {
+          const newSessionId = sessionMatch[1];
+          onSessionId(newSessionId);
+          chunk = chunk.replace(/\[SESSION_ID:[^\]]+\]/, '');
+        }
+        isFirstChunk = false;
+      }
+      
+      if (chunk) {
+        onChunk(chunk);
+      }
     }
     
     onDone();
@@ -74,6 +112,7 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [useOnline, setUseOnline] = useState(false);
   const [doc, setDoc] = useState(null);
+  const [sessionId, setSessionId] = useState(() => getOrCreateSessionId());
 
   const fileInputRef = useRef(null);
   const endRef = useRef(null);
@@ -87,6 +126,24 @@ export default function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
+  // Start a new conversation (clears messages and creates new session)
+  function startNewChat() {
+    if (sending) return; // Don't allow during generation
+    
+    // Generate new session ID
+    const newSessionId = generateSessionId();
+    localStorage.setItem(SESSION_STORAGE_KEY, newSessionId);
+    setSessionId(newSessionId);
+    
+    // Clear messages
+    setMessages([]);
+    setInput("");
+    setDoc(null);
+    if (fileInputRef.current) fileInputRef.current.value = null;
+    
+    console.log("Started new chat session:", newSessionId);
+  }
+
   function stopGenerating() {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -99,7 +156,6 @@ export default function App() {
         
 
         if (lastMsg && lastMsg.role === ROLE.assistant) {
-            // 
             const suffix = lastMsg.content ? " ... [Stopped]" : "[Generation Cancelled]";
             
             return updated.map((msg, idx) => 
@@ -140,11 +196,19 @@ export default function App() {
       text,
       useOnline,
       doc,
+      sessionId,
       abortControllerRef.current.signal,
       (chunk) => {
         setMessages(prev => prev.map(msg => 
           msg.id === assistantId ? { ...msg, content: msg.content + chunk } : msg
         ));
+      },
+      (newSessionId) => {
+        // Update session ID if backend provides a new one
+        if (newSessionId && newSessionId !== sessionId) {
+          localStorage.setItem(SESSION_STORAGE_KEY, newSessionId);
+          setSessionId(newSessionId);
+        }
       },
       () => {
         setSending(false);
@@ -170,7 +234,17 @@ export default function App() {
     <div className="app">
       <section className="main">
         <div className="topbar">
-          <div className="left"><strong>Finance Assistant</strong></div>
+          <div className="left">
+            <button 
+              className="icon new-chat-btn" 
+              onClick={startNewChat} 
+              disabled={sending}
+              title="Start New Chat"
+            >
+              <Icon.NewChat />
+            </button>
+            <strong>Finance Assistant</strong>
+          </div>
           <div className="right">
             <button className="icon" onClick={() => setDark((d) => !d)}>
               {dark ? <Icon.Sun /> : <Icon.Moon />}

@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 from dotenv import load_dotenv
 import asyncio
+from typing import AsyncGenerator, Optional, List
 
 # --- LlamaIndex & Ollama Imports ---
 from llama_index.core import (
@@ -13,9 +14,12 @@ from llama_index.core import (
     VectorStoreIndex,
 )
 from llama_index.core.prompts import PromptTemplate
+from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from typing import AsyncGenerator  # Generator yerine AsyncGenerator
+
+# Memory Manager Import
+from backend.src.memory_manager import memory_manager
 
 load_dotenv()
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
@@ -34,47 +38,85 @@ Settings.llm = llm
 Settings.embed_model = embed_model
 Settings.chunk_size = 1024
 
-DEFAULT_QA_PROMPT_TMPL = (
-    "You are a specialized financial analyst. Your task is to answer the user's question "
-    "based *only* on the provided context information. Do not use any prior knowledge.\n"
-    "---------------------\n"
-    "CONTEXT:\n{context_str}\n"
-    "---------------------\n"
-    "QUESTION: {query_str}\n\n"
-    "INSTRUCTIONS:\n"
-    "1. Answer the question directly and concisely.\n"
-    "2. Synthesize information from all provided sources to form a complete answer.\n"
-    "3. **Crucially, clearly attribute claims to their sources** (e.g., 'According to Source Title X...', 'The Motley Fool article argues that...').\n"
-    "4. If sources conflict, point out the disagreement (e.g., 'While Source A states..., Source B suggests...').\n"
-    "5. If the context does not contain the answer, state that clearly.\n\n"
-    "ANSWER (must be in English):\n"
-)
-qa_template = PromptTemplate(DEFAULT_QA_PROMPT_TMPL)
 
-async def plain_chat(question: str, test: bool = False) -> AsyncGenerator[str, None]:
+def _build_chat_messages(
+    session_id: Optional[str],
+    question: str,
+    system_prompt: str
+) -> List[ChatMessage]:
     """
-    Plain chat with Ollama (Async Streaming)
+    Build chat messages list with conversation history.
+    
+    Args:
+        session_id: Session ID for memory retrieval
+        question: Current user question
+        system_prompt: System instructions
+        
+    Returns:
+        List of ChatMessage objects for the LLM
+    """
+    messages = [
+        ChatMessage(role=MessageRole.SYSTEM, content=system_prompt)
+    ]
+    
+    # Add conversation history if session exists
+    if session_id:
+        history = memory_manager.get_chat_history(session_id)
+        messages.extend(history)
+    
+    # Add current user message
+    messages.append(ChatMessage(role=MessageRole.USER, content=question))
+    
+    return messages
+
+
+async def plain_chat(
+    question: str, 
+    test: bool = False,
+    session_id: Optional[str] = None
+) -> AsyncGenerator[str, None]:
+    """
+    Plain chat with Ollama (Async Streaming) with conversation memory.
+    
+    Args:
+        question: User's question
+        test: Whether to run in test mode
+        session_id: Optional session ID for conversation memory
     """
     if test:
         yield "Test response from Ollama"
         return
     
-    print("--- Performing plain chat with Ollama (Async) ---")
+    print(f"--- Performing plain chat with Ollama (Async) | Session: {session_id} ---")
     
-    prompt = (
-        "You are a helpful financial analyst. "
-        "If the user asks a general question, have a normal conversation. "
-        "If the user asks a financial question, answer it concisely. "
-        "Never use hashtags or emojis.\n\n"
-        f"User: {question}\nAnalyst:"
+    system_prompt = (
+        "You are a financial analyst providing investor-focused insights. Based on the conversation context, "
+        "identify and explain information material to investment decisions. If relevant information is absent, indicate this. "
+        "Do not use context reference labels in your answer. Never use hashtags or emojis. "
+        "Remember previous messages in the conversation to provide contextually relevant answers."
     )
 
     try:
+        # Build messages with history
+        messages = _build_chat_messages(session_id, question, system_prompt)
         
-        response_gen = await llm.astream_complete(prompt)
+        # Store user message in memory
+        if session_id:
+            memory_manager.add_message(session_id, "user", question)
+        
+        # Stream the response
+        full_response = ""
+        response_gen = await llm.astream_chat(messages)
+        
         async for chunk in response_gen:
-            yield chunk.delta
-            await asyncio.sleep(0) 
+            delta = chunk.delta if hasattr(chunk, 'delta') else str(chunk)
+            full_response += delta
+            yield delta
+            await asyncio.sleep(0)
+        
+        # Store assistant response in memory
+        if session_id and full_response:
+            memory_manager.add_message(session_id, "assistant", full_response)
 
     except Exception as e:
         print(f"Ollama Chat Error: {e}")
@@ -110,15 +152,25 @@ def extract_ticker_from_keywords(question: str) -> str | None:
     if "meta" in lowered_question or "facebook" in lowered_question: return "META"
     return None
 
-async def query_online(question: str, test: bool = False) -> AsyncGenerator[str, None]:
+
+async def query_online(
+    question: str, 
+    test: bool = False,
+    session_id: Optional[str] = None
+) -> AsyncGenerator[str, None]:
     """
-    Online research and answer generation (Async Streaming).
+    Online research and answer generation (Async Streaming) with conversation memory.
+    
+    Args:
+        question: User's question
+        test: Whether to run in test mode
+        session_id: Optional session ID for conversation memory
     """
     if test:
         yield "Test online research response"
         return
         
-    print("--- Performing online research (Async RAG) ---")
+    print(f"--- Performing online research (Async RAG) | Session: {session_id} ---")
 
     ticker = extract_ticker_from_keywords(question)
     
@@ -175,7 +227,20 @@ async def query_online(question: str, test: bool = False) -> AsyncGenerator[str,
             yield "Found articles, but content was empty."
             return
 
+        # Store user message in memory before querying
+        if session_id:
+            memory_manager.add_message(session_id, "user", question)
+
         index = VectorStoreIndex.from_documents(documents_list)
+        
+        # Build query with conversation context
+        conversation_context = ""
+        if session_id:
+            history_str = memory_manager.get_history_as_string(session_id)
+            if history_str:
+                conversation_context = f"\n\nPrevious conversation:\n{history_str}\n\n"
+        
+        enhanced_question = f"{conversation_context}Current question: {question}" if conversation_context else question
         
         # Async Query Engine
         query_engine = index.as_query_engine(
@@ -185,30 +250,61 @@ async def query_online(question: str, test: bool = False) -> AsyncGenerator[str,
         )
 
         print("Synthesizing answer...")
-        streaming_response = await query_engine.aquery(question)
+        streaming_response = await query_engine.aquery(enhanced_question)
         
+        full_response = ""
         async for text in streaming_response.async_response_gen():
+            full_response += text
             yield text
-            await asyncio.sleep(0) 
+            await asyncio.sleep(0)
+        
+        # Store assistant response in memory
+        if session_id and full_response:
+            memory_manager.add_message(session_id, "assistant", full_response)
 
     except Exception as e:
         print(f"Error in query_online: {e}")
         yield f"Error: {str(e)}"
 
-async def query_document(question: str, doc_path: str, test: bool = False) -> AsyncGenerator[str, None]:
+
+async def query_document(
+    question: str, 
+    doc_path: str, 
+    test: bool = False,
+    session_id: Optional[str] = None
+) -> AsyncGenerator[str, None]:
     """
-    Document-based research and answer generation (Async Streaming).
+    Document-based research and answer generation (Async Streaming) with conversation memory.
+    
+    Args:
+        question: User's question
+        doc_path: Path to the document
+        test: Whether to run in test mode
+        session_id: Optional session ID for conversation memory
     """
     if test:
         yield "Test document research response"
         return
         
-    print(f"--- Querying document (Async): {doc_path} ---")
+    print(f"--- Querying document (Async): {doc_path} | Session: {session_id} ---")
 
     try:
+        # Store user message in memory before querying
+        if session_id:
+            memory_manager.add_message(session_id, "user", question)
+        
         reader = SimpleDirectoryReader(input_files=[doc_path])
         docs = reader.load_data()
         index = VectorStoreIndex.from_documents(docs)
+
+        # Build query with conversation context
+        conversation_context = ""
+        if session_id:
+            history_str = memory_manager.get_history_as_string(session_id)
+            if history_str:
+                conversation_context = f"\n\nPrevious conversation:\n{history_str}\n\n"
+        
+        enhanced_question = f"{conversation_context}Current question: {question}" if conversation_context else question
 
         query_engine = index.as_query_engine(
             response_mode="compact",
@@ -216,10 +312,17 @@ async def query_document(question: str, doc_path: str, test: bool = False) -> As
             streaming=True
         )
 
-        streaming_response = await query_engine.aquery(question)
+        streaming_response = await query_engine.aquery(enhanced_question)
+        
+        full_response = ""
         async for text in streaming_response.async_response_gen():
+            full_response += text
             yield text
             await asyncio.sleep(0)
+        
+        # Store assistant response in memory
+        if session_id and full_response:
+            memory_manager.add_message(session_id, "assistant", full_response)
 
     except Exception as e:
         print(f"Error in query_document: {e}")
