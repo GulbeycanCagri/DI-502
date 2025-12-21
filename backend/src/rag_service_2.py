@@ -3,6 +3,7 @@ import os
 import requests
 import pandas as pd
 from dotenv import load_dotenv
+import asyncio
 
 # --- LlamaIndex & Ollama Imports ---
 from llama_index.core import (
@@ -14,6 +15,7 @@ from llama_index.core import (
 from llama_index.core.prompts import PromptTemplate
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from typing import AsyncGenerator  # Generator yerine AsyncGenerator
 
 load_dotenv()
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
@@ -32,7 +34,6 @@ Settings.llm = llm
 Settings.embed_model = embed_model
 Settings.chunk_size = 1024
 
-
 DEFAULT_QA_PROMPT_TMPL = (
     "You are a specialized financial analyst. Your task is to answer the user's question "
     "based *only* on the provided context information. Do not use any prior knowledge.\n"
@@ -50,20 +51,15 @@ DEFAULT_QA_PROMPT_TMPL = (
 )
 qa_template = PromptTemplate(DEFAULT_QA_PROMPT_TMPL)
 
-BROWSER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-
-
-def plain_chat(question: str, test: bool = False) -> str:
+async def plain_chat(question: str, test: bool = False) -> AsyncGenerator[str, None]:
     """
-    Normal sohbet fonksiyonu. Doğrudan Ollama'ya sorar.
+    Plain chat with Ollama (Async Streaming)
     """
     if test:
-        print("--- Performing plain chat (test mode) ---")
-        return "Test response from Ollama"
+        yield "Test response from Ollama"
+        return
     
-    print("--- Performing plain chat with Ollama ---")
+    print("--- Performing plain chat with Ollama (Async) ---")
     
     prompt = (
         "You are a helpful financial analyst. "
@@ -74,16 +70,17 @@ def plain_chat(question: str, test: bool = False) -> str:
     )
 
     try:
-        response = llm.complete(prompt)
-        return str(response)
+        
+        response_gen = await llm.astream_complete(prompt)
+        async for chunk in response_gen:
+            yield chunk.delta
+            await asyncio.sleep(0) 
+
     except Exception as e:
         print(f"Ollama Chat Error: {e}")
-        return "I am having trouble connecting to my brain (Ollama). Please try again."
+        yield f"Error: {str(e)}"
 
 def generate_search_query(question: str) -> str:
-    """
-    Kullanıcı sorusunu arama motoru anahtar kelimelerine çevirir.
-    """
     print("--- Generating search keywords ---")
     prompt = (
         "You are a search query generator. "
@@ -91,7 +88,6 @@ def generate_search_query(question: str) -> str:
         "IMPORTANT: Only output the keywords. Do not add any other text, examples, formatting, or explanations.\n\n"
         f"Question: {question}\nKeywords:"
     )
-
     try:
         response = llm.complete(prompt)
         keywords = str(response).strip().split("\n")[0].replace('"', "")
@@ -102,12 +98,7 @@ def generate_search_query(question: str) -> str:
         return question
 
 def extract_ticker_from_keywords(question: str) -> str | None:
-    """
-    Basit hisse senedi bulucu (Hardcoded).
-    Bunu da istersen Ollama'ya sorabilirsin ama bu yöntem daha hızlıdır.
-    """
     lowered_question = question.lower()
-    
     if "nvidia" in lowered_question: return "NVDA"
     if "apple" in lowered_question: return "AAPL"
     if "amd" in lowered_question or "advanced micro devices" in lowered_question: return "AMD"
@@ -117,26 +108,24 @@ def extract_ticker_from_keywords(question: str) -> str | None:
     if "google" in lowered_question or "alphabet" in lowered_question: return "GOOGL"
     if "amazon" in lowered_question: return "AMZN"
     if "meta" in lowered_question or "facebook" in lowered_question: return "META"
-
-    print("No specific ticker found in question.")
     return None
 
-def query_online(question: str, test: bool = False) -> str:
+async def query_online(question: str, test: bool = False) -> AsyncGenerator[str, None]:
     """
-    Finnhub API'den haber çeker ve RAG yapar.
+    Online research and answer generation (Async Streaming).
     """
     if test:
-        print("--- Performing online research (test mode) ---")
-        return "Test online research response"
+        yield "Test online research response"
+        return
         
-    print("--- Performing online research (Finnhub Hybrid + Re-rank Strategy) ---")
+    print("--- Performing online research (Async RAG) ---")
 
     ticker = extract_ticker_from_keywords(question)
     
     try:
         articles = []
         if ticker:
-            print(f"Ticker identified: {ticker}. Fetching company-specific news.")
+            print(f"Ticker identified: {ticker}.")
             today = datetime.date.today()
             three_days_ago = today - datetime.timedelta(days=15)
             endpoint_url = "https://finnhub.io/api/v1/company-news"
@@ -150,7 +139,7 @@ def query_online(question: str, test: bool = False) -> str:
             response.raise_for_status()
             articles = response.json()[:25]
         else:
-            print("No specific ticker. Fetching general market news.")
+            print("No specific ticker.")
             endpoint_url = "https://finnhub.io/api/v1/news"
             params = {"category": "general", "minId": 0, "token": FINNHUB_API_KEY}
             response = requests.get(endpoint_url, params=params)
@@ -158,9 +147,8 @@ def query_online(question: str, test: bool = False) -> str:
             articles = response.json()[:30]
 
         if not articles:
-            return "No recent news found via Finnhub."
-
-        print(f"Found {len(articles)} articles. Processing for RAG...")
+            yield "No recent news found via Finnhub."
+            return
 
         documents_list = []
         news_df = pd.DataFrame(columns=["headline", "summary", "source", "url"])
@@ -172,7 +160,6 @@ def query_online(question: str, test: bool = False) -> str:
             url = article.get("url", "")
 
             full_text = f"Source: {source_name}\nHeadline: {headline}\nSummary: {summary}\n"
-
             news_df = pd.concat([news_df, pd.DataFrame([{
                 "headline": headline, "summary": summary, "source": source_name, "url": url
             }])], ignore_index=True)
@@ -185,66 +172,55 @@ def query_online(question: str, test: bool = False) -> str:
                 documents_list.append(doc)
 
         if not documents_list:
-            return "Found articles, but content was empty."
+            yield "Found articles, but content was empty."
+            return
 
-        # RAG
         index = VectorStoreIndex.from_documents(documents_list)
+        
+        # Async Query Engine
         query_engine = index.as_query_engine(
             response_mode="compact",
             similarity_top_k=5,
-            # text_qa_template=qa_template,
+            streaming=True,
         )
 
-        print("Synthesizing answer from top 5 chunks using Ollama...")
-        response = query_engine.query(question)
+        print("Synthesizing answer...")
+        streaming_response = await query_engine.aquery(question)
         
-        news_df.to_csv("finnhub_retrieved_articles.csv", index=False)
-        
-        return str(response)
+        async for text in streaming_response.async_response_gen():
+            yield text
+            await asyncio.sleep(0) 
 
     except Exception as e:
         print(f"Error in query_online: {e}")
-        return f"Error while doing online research: {str(e)}"
+        yield f"Error: {str(e)}"
 
-def query_document(question: str, doc_path: str, test: bool = False) -> str:
+async def query_document(question: str, doc_path: str, test: bool = False) -> AsyncGenerator[str, None]:
     """
-    Yerel PDF/Dosya üzerinde RAG yapar.
+    Document-based research and answer generation (Async Streaming).
     """
     if test:
-        print("--- Performing document research (test mode) ---")
-        return "Test document research response"
+        yield "Test document research response"
+        return
         
-    print(f"--- Querying document with Ollama: {doc_path} ---")
-    if not os.path.exists(doc_path):
-        return "Error: Document not found."
+    print(f"--- Querying document (Async): {doc_path} ---")
 
     try:
         reader = SimpleDirectoryReader(input_files=[doc_path])
         docs = reader.load_data()
-        
         index = VectorStoreIndex.from_documents(docs)
 
         query_engine = index.as_query_engine(
             response_mode="compact",
             similarity_top_k=3,
+            streaming=True
         )
 
-        response = query_engine.query(question)
-        return str(response)
+        streaming_response = await query_engine.aquery(question)
+        async for text in streaming_response.async_response_gen():
+            yield text
+            await asyncio.sleep(0)
 
     except Exception as e:
         print(f"Error in query_document: {e}")
-        return "Error while processing the document."
-
-# TEST CODE
-if __name__ == "__main__":
-    print("-----------------------------------")
-    print("Test 1: Plain Chat (Ollama)")
-    chat_resp = plain_chat("What is a 10-K report?")
-    print(f"LLM Response:\n{chat_resp}\n")
-
-    print("-----------------------------------")
-    print("Test 2: Online RAG Query")
-    online_question = "What is the market's reaction to NVIDIA's most recent product announcements?"
-    rag_resp = query_online(online_question)
-    print(f"Online RAG Response:\n{rag_resp}\n")
+        yield f"Error: {str(e)}"

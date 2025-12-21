@@ -1,16 +1,34 @@
-# React + Vite
+# Financial AI Assistant - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The client-side interface for the DI-502 Project. This is a modern, single-page React application built with Vite, designed to interact with the FastAPI backend via streaming responses.
 
-Currently, two official plugins are available:
+## ✨ Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+* **Streaming Chat Interface**: Renders AI responses in real-time (typewriter effect).
+* **Markdown Support**: Displays financial data in tables, lists, and formatted text using `react-markdown` and `remark-gfm`.
+* **Smart Composer**:
+    * File uploads for RAG analysis.
+    * Online Research toggle (Global Search).
+    * **"Stop Generating"** button to cancel requests.
+* **Theme System**: Persistent Dark/Light mode with custom CSS variables.
+* **Robust Testing**: Unit and integration tests using **Vitest** and **React Testing Library**.
 
-## React Compiler
+## 🛠️ Tech Stack
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+* **Framework**: React 18 + Vite
+* **Styling**: Plain CSS (Modern variable-based architecture)
+* **Icons**: SVG Icons (Lucide/Custom)
+* **Markdown**: `react-markdown`, `remark-gfm`
+* **Testing**: `vitest`, `@testing-library/react`, `jsdom`
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🚀 Getting Started
+
+### 1. Installation
+
+Navigate to the frontend directory and install dependencies:
+
+```bash
+cd frontend
+npm install
