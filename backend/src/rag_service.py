@@ -220,12 +220,12 @@ def query_online(question: str, test: bool = False) -> str:
             if ticker:
                 print(f"Ticker identified: {ticker}. Fetching company-specific news.")
                 today = datetime.date.today()
-                three_days_ago = today - datetime.timedelta(days=15)
+                fifteen_days_ago = today - datetime.timedelta(days=15)
 
                 endpoint_url = "https://finnhub.io/api/v1/company-news"
                 params = {
                     "symbol": ticker,
-                    "from": three_days_ago.strftime("%Y-%m-%d"),
+                    "from": fifteen_days_ago.strftime("%Y-%m-%d"),
                     "to": today.strftime("%Y-%m-%d"),
                     "token": FINNHUB_API_KEY,
                 }
