@@ -1,25 +1,30 @@
-import os
-import torch
-import time
-import wandb
 import argparse
-import sys
 import json
+import os
 import re
-from typing import List, Dict
-from dotenv import load_dotenv
-from tqdm import tqdm
+import sys
+import time
+from typing import Dict, List
 
-from transformers import BitsAndBytesConfig, AutoModelForCausalLM, AutoTokenizer, pipeline
-from llama_index.core import VectorStoreIndex, Document, Settings
-from llama_index.llms.huggingface import HuggingFaceLLM
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+import ragas
+import torch
+import wandb
+from datasets import Dataset
+from dotenv import load_dotenv
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from datasets import Dataset
+from llama_index.core import Document, Settings, VectorStoreIndex
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.llms.huggingface import HuggingFaceLLM
 from ragas import evaluate
-from ragas.metrics import Faithfulness, AnswerRelevancy, ContextRelevance
-import ragas
+from ragas.metrics import AnswerRelevancy, ContextRelevance, Faithfulness
+from tqdm import tqdm
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    pipeline,
+)
 
 load_dotenv()
 
@@ -33,7 +38,7 @@ EMBEDDING_MODELS = [
     "BAAI/bge-small-en-v1.5",
     "sentence-transformers/all-MiniLM-L6-v2",
     "sentence-transformers/all-mpnet-base-v2",
-    "intfloat/e5-large-v2"
+    "intfloat/e5-large-v2",
 ]
 
 # Fixed Prompt for Embedder Evaluation (using 'detailed_analyst' as standard)
@@ -45,7 +50,7 @@ FIXED_PROMPT = {
         "and provide detailed answers with relevant details and context. If information cannot be found, explicitly state this. "
         "Never fabricate information. Exclude any reference labels from your answer. "
         "{context_block}\n\nQuestion: {question}\nProvide a detailed answer:"
-    )
+    ),
 }
 
 # Initialize Gemini for RAGAS Judge
@@ -80,6 +85,7 @@ def get_model():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     return model, tokenizer
+
 
 # Load LLM once (global)
 print("Loading LLM...")
@@ -123,9 +129,11 @@ def get_performance_metrics(start_time: float, response: str) -> Dict:
     }
 
 
-def generate_llama_answer(question: str, contexts: List[str], prompt_template: str) -> tuple:
+def generate_llama_answer(
+    question: str, contexts: List[str], prompt_template: str
+) -> tuple:
     """Generate answer using Llama 3 with a specific prompt template."""
-    
+
     context_block = "\n\n".join(
         [f"[Context {idx}]\n{ctx.strip()}" for idx, ctx in enumerate(contexts, start=1)]
     )
@@ -142,15 +150,17 @@ def generate_llama_answer(question: str, contexts: List[str], prompt_template: s
     )
     rag_answer = output[0]["generated_text"].strip()
     # Remove context reference labels
-    rag_answer = re.sub(r'\[Context\s+\d+\]', '', rag_answer).strip()
+    rag_answer = re.sub(r"\[Context\s+\d+\]", "", rag_answer).strip()
     performance_metrics = get_performance_metrics(start_time, rag_answer)
-    
+
     return rag_answer, performance_metrics, prompt
 
 
-def evaluate_rag_pipeline_with_embedder(evaluation_json_path: str, prompt_config: Dict) -> tuple:
+def evaluate_rag_pipeline_with_embedder(
+    evaluation_json_path: str, prompt_config: Dict
+) -> tuple:
     """Run RAG pipeline with a specific embedder (configured globally) and collect evaluation data."""
-    
+
     evaluation_data = {
         "question": [],
         "answer": [],
@@ -158,14 +168,14 @@ def evaluate_rag_pipeline_with_embedder(evaluation_json_path: str, prompt_config
         "ground_truth": [],
         "prompt": [],
     }
-    
+
     performance_data = {
         "response_time_sec": [],
         "throughput_tokens_per_sec": [],
         "gpu_memory_MB": [],
     }
 
-    print(f"\nRunning RAG pipeline...")
+    print("\nRunning RAG pipeline...")
 
     for enum, golden_file in enumerate(os.listdir(evaluation_json_path)):
         if enum == 1:
@@ -178,14 +188,14 @@ def evaluate_rag_pipeline_with_embedder(evaluation_json_path: str, prompt_config
         for item in tqdm(golden_dataset):
             context = item.get("context")
             qa_pairs = item.get("qa_pairs", [])
-            
+
             if not context or not qa_pairs:
                 continue
-                
+
             for qa in qa_pairs:
                 question = qa.get("question")
                 ground_truth_answer = qa.get("answer")
-                
+
                 if not question or not ground_truth_answer:
                     continue
 
@@ -199,9 +209,7 @@ def evaluate_rag_pipeline_with_embedder(evaluation_json_path: str, prompt_config
                     retrieved_contexts = [context]
 
                 rag_answer, perf_metrics, used_prompt = generate_llama_answer(
-                    question, 
-                    retrieved_contexts, 
-                    prompt_config["template"]
+                    question, retrieved_contexts, prompt_config["template"]
                 )
 
                 # Store data for RAGAS evaluation
@@ -210,9 +218,13 @@ def evaluate_rag_pipeline_with_embedder(evaluation_json_path: str, prompt_config
                 evaluation_data["contexts"].append(retrieved_contexts)
                 evaluation_data["ground_truth"].append(ground_truth_answer)
                 evaluation_data["prompt"].append(used_prompt)
-                
-                performance_data["response_time_sec"].append(perf_metrics["response_time_sec"])
-                performance_data["throughput_tokens_per_sec"].append(perf_metrics["throughput_tokens_per_sec"])
+
+                performance_data["response_time_sec"].append(
+                    perf_metrics["response_time_sec"]
+                )
+                performance_data["throughput_tokens_per_sec"].append(
+                    perf_metrics["throughput_tokens_per_sec"]
+                )
                 performance_data["gpu_memory_MB"].append(perf_metrics["gpu_memory_MB"])
 
     return evaluation_data, performance_data
@@ -220,86 +232,111 @@ def evaluate_rag_pipeline_with_embedder(evaluation_json_path: str, prompt_config
 
 def compute_ragas_evaluation(evaluation_data: Dict, ragas_embed_model) -> Dict:
     """Compute RAGAS metrics for the evaluation data using specific embedder."""
-    
+
     if not evaluation_data["question"]:
         return None
 
-    dataset = Dataset.from_dict({
-        "question": evaluation_data["question"],
-        "answer": evaluation_data["answer"],
-        "contexts": evaluation_data["contexts"],
-        "ground_truth": evaluation_data["ground_truth"],
-    })
-    
-    metrics_to_run = [
-        Faithfulness(),
-        AnswerRelevancy(),
-        ContextRelevance()
-    ]
+    dataset = Dataset.from_dict(
+        {
+            "question": evaluation_data["question"],
+            "answer": evaluation_data["answer"],
+            "contexts": evaluation_data["contexts"],
+            "ground_truth": evaluation_data["ground_truth"],
+        }
+    )
+
+    metrics_to_run = [Faithfulness(), AnswerRelevancy(), ContextRelevance()]
 
     results = evaluate(
-        dataset,
-        metrics=metrics_to_run,
-        llm=gemini_llm,
-        embeddings=ragas_embed_model
+        dataset, metrics=metrics_to_run, llm=gemini_llm, embeddings=ragas_embed_model
     )
 
     # Compute mean scores
     final_results = {
-        "faithfulness": sum(list(results["faithfulness"])) / len(evaluation_data["question"]),
-        "answer_relevancy": sum(list(results["answer_relevancy"])) / len(evaluation_data["question"]),
-        "context_relevance": sum(list(results["nv_context_relevance"])) / len(evaluation_data["question"]),
+        "faithfulness": sum(list(results["faithfulness"]))
+        / len(evaluation_data["question"]),
+        "answer_relevancy": sum(list(results["answer_relevancy"]))
+        / len(evaluation_data["question"]),
+        "context_relevance": sum(list(results["nv_context_relevance"]))
+        / len(evaluation_data["question"]),
     }
-    
+
     # Replace NaN with 0
-    final_results = {k: (0 if (isinstance(v, float) and (v != v)) else v) for k, v in final_results.items()}
-    
+    final_results = {
+        k: (0 if (isinstance(v, float) and (v != v)) else v)
+        for k, v in final_results.items()
+    }
+
     # Compute standard deviations
-    final_results["faithfulness_std"] = torch.std(torch.tensor(results["faithfulness"])).item()
-    final_results["answer_relevancy_std"] = torch.std(torch.tensor(results["answer_relevancy"])).item()
-    final_results["context_relevance_std"] = torch.std(torch.tensor(results["nv_context_relevance"])).item()
-    
+    final_results["faithfulness_std"] = torch.std(
+        torch.tensor(results["faithfulness"])
+    ).item()
+    final_results["answer_relevancy_std"] = torch.std(
+        torch.tensor(results["answer_relevancy"])
+    ).item()
+    final_results["context_relevance_std"] = torch.std(
+        torch.tensor(results["nv_context_relevance"])
+    ).item()
+
     # Replace NaN with 0
-    final_results = {k: (0 if (isinstance(v, float) and (v != v)) else v) for k, v in final_results.items()}
+    final_results = {
+        k: (0 if (isinstance(v, float) and (v != v)) else v)
+        for k, v in final_results.items()
+    }
 
     return final_results
 
 
 def compute_performance_metrics(performance_data: Dict) -> Dict:
     """Compute mean and std performance metrics."""
-    
+
     if not performance_data["response_time_sec"]:
         return None
 
     n_samples = len(performance_data["response_time_sec"])
-    
+
     final_metrics = {
         "response_time_sec": sum(performance_data["response_time_sec"]) / n_samples,
-        "throughput_tokens_per_sec": sum(performance_data["throughput_tokens_per_sec"]) / n_samples,
+        "throughput_tokens_per_sec": sum(performance_data["throughput_tokens_per_sec"])
+        / n_samples,
         "gpu_memory_MB": sum(performance_data["gpu_memory_MB"]) / n_samples,
     }
 
-    final_metrics["response_time_sec_std"] = torch.std(torch.tensor(performance_data["response_time_sec"])).item()
-    final_metrics["throughput_tokens_per_sec_std"] = torch.std(torch.tensor(performance_data["throughput_tokens_per_sec"])).item()
-    final_metrics["gpu_memory_MB_std"] = torch.std(torch.tensor(performance_data["gpu_memory_MB"])).item()
+    final_metrics["response_time_sec_std"] = torch.std(
+        torch.tensor(performance_data["response_time_sec"])
+    ).item()
+    final_metrics["throughput_tokens_per_sec_std"] = torch.std(
+        torch.tensor(performance_data["throughput_tokens_per_sec"])
+    ).item()
+    final_metrics["gpu_memory_MB_std"] = torch.std(
+        torch.tensor(performance_data["gpu_memory_MB"])
+    ).item()
 
     return final_metrics
 
 
 def log_sample_data_to_wandb(evaluation_data: Dict, performance_data: Dict):
     """Log individual samples with their prompts, answers, and performance metrics to W&B table."""
-    
+
     # Create a table with sample details
-    table = wandb.Table(columns=[
-        "Sample_ID", "Question", "Ground_Truth", "Model_Answer", 
-        "Contexts", "Context_Count", "Prompt_Used", 
-        "Response_Time_Sec", "Throughput_Tokens_Per_Sec"
-    ])
-    
+    table = wandb.Table(
+        columns=[
+            "Sample_ID",
+            "Question",
+            "Ground_Truth",
+            "Model_Answer",
+            "Contexts",
+            "Context_Count",
+            "Prompt_Used",
+            "Response_Time_Sec",
+            "Throughput_Tokens_Per_Sec",
+        ]
+    )
+
     for idx in range(len(evaluation_data["question"])):
         # Join contexts with a separator
         contexts_str = "\n---\n".join(evaluation_data["contexts"][idx])
-        
+
         table.add_data(
             idx + 1,
             evaluation_data["question"][idx],
@@ -307,17 +344,30 @@ def log_sample_data_to_wandb(evaluation_data: Dict, performance_data: Dict):
             evaluation_data["answer"][idx],
             contexts_str,
             len(evaluation_data["contexts"][idx]),
-            evaluation_data["prompt"][idx][:100] + "..." if len(evaluation_data["prompt"][idx]) > 100 else evaluation_data["prompt"][idx],
-            performance_data["response_time_sec"][idx] if idx < len(performance_data["response_time_sec"]) else 0,
-            performance_data["throughput_tokens_per_sec"][idx] if idx < len(performance_data["throughput_tokens_per_sec"]) else 0
+            evaluation_data["prompt"][idx][:100] + "..."
+            if len(evaluation_data["prompt"][idx]) > 100
+            else evaluation_data["prompt"][idx],
+            performance_data["response_time_sec"][idx]
+            if idx < len(performance_data["response_time_sec"])
+            else 0,
+            performance_data["throughput_tokens_per_sec"][idx]
+            if idx < len(performance_data["throughput_tokens_per_sec"])
+            else 0,
         )
-    
+
     wandb.log({"samples_details": table})
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run RAG evaluation for a specific embedder.")
-    parser.add_argument("--embedder_idx", type=int, default=None, help="Index of the embedder to run (0-based).")
+    parser = argparse.ArgumentParser(
+        description="Run RAG evaluation for a specific embedder."
+    )
+    parser.add_argument(
+        "--embedder_idx",
+        type=int,
+        default=None,
+        help="Index of the embedder to run (0-based).",
+    )
     args = parser.parse_args()
 
     # Determine which embedders to run
@@ -325,95 +375,99 @@ if __name__ == "__main__":
     if args.embedder_idx is not None:
         if 0 <= args.embedder_idx < len(EMBEDDING_MODELS):
             embedders_to_run = [EMBEDDING_MODELS[args.embedder_idx]]
-            print(f"Running specific embedder index {args.embedder_idx}: {embedders_to_run[0]}")
+            print(
+                f"Running specific embedder index {args.embedder_idx}: {embedders_to_run[0]}"
+            )
         else:
-            print(f"Error: Invalid embedder index {args.embedder_idx}. Must be between 0 and {len(EMBEDDING_MODELS)-1}.")
+            print(
+                f"Error: Invalid embedder index {args.embedder_idx}. Must be between 0 and {len(EMBEDDING_MODELS)-1}."
+            )
             sys.exit(1)
 
     all_results = {}
-    
+
     for embedder_name in embedders_to_run:
         # Clean embedder name for W&B run name (replace slashes)
         safe_embedder_name = embedder_name.replace("/", "_")
         run_name = f"llama3_rag_eval_embedder_{safe_embedder_name}"
-        
+
         # Initialize W&B run
-        wandb.init(project=WANDB_PROJECT, 
-                   group=WANDB_GROUP,
-                   name=run_name, 
-                   reinit=True)
-        
+        wandb.init(project=WANDB_PROJECT, group=WANDB_GROUP, name=run_name, reinit=True)
+
         print(f"\n{'='*60}")
         print(f"Starting evaluation run for Embedder: {embedder_name}")
         print(f"{'='*60}")
-        
+
         # 1. Configure LlamaIndex Embedder
         print(f"Initializing LlamaIndex embedding model: {embedder_name}")
         Settings.embed_model = HuggingFaceEmbedding(model_name=embedder_name)
-        
+
         # 2. Configure RAGAS Embedder (LangChain wrapper)
         print(f"Initializing RAGAS embedding model: {embedder_name}")
         ragas_embed_model = HuggingFaceEmbeddings(model_name=embedder_name)
-        
+
         # Run evaluation pipeline
         evaluation_data, performance_data = evaluate_rag_pipeline_with_embedder(
-            "data/datasets/test_SEC_10K_dataset",
-            FIXED_PROMPT
+            "data/datasets/test_SEC_10K_dataset", FIXED_PROMPT
         )
-        
+
         if not evaluation_data["question"]:
-            print(f"Warning: No evaluation samples generated for embedder: {embedder_name}")
+            print(
+                f"Warning: No evaluation samples generated for embedder: {embedder_name}"
+            )
             wandb.finish()
             continue
-        
+
         # Compute RAGAS metrics
         ragas_results = compute_ragas_evaluation(evaluation_data, ragas_embed_model)
         perf_results = compute_performance_metrics(performance_data)
-        
+
         # Store results
         all_results[embedder_name] = {
             "ragas": ragas_results,
             "performance": perf_results,
-            "num_samples": len(evaluation_data["question"])
+            "num_samples": len(evaluation_data["question"]),
         }
-        
+
         # Log to W&B
         if ragas_results:
             ragas_log = {f"ragas/{k}": v for k, v in ragas_results.items()}
             wandb.log(ragas_log)
-            
+
         if perf_results:
             perf_log = {f"performance/{k}": v for k, v in perf_results.items()}
             wandb.log(perf_log)
-        
+
         # Log configuration
-        wandb.log({
-            "embedding_model": embedder_name,
-            "prompt_name": FIXED_PROMPT["name"],
-            "num_evaluation_samples": len(evaluation_data["question"])
-        })
-        
+        wandb.log(
+            {
+                "embedding_model": embedder_name,
+                "prompt_name": FIXED_PROMPT["name"],
+                "num_evaluation_samples": len(evaluation_data["question"]),
+            }
+        )
+
         # Log sample details
         log_sample_data_to_wandb(evaluation_data, performance_data)
-        
+
         # Finish W&B run
         wandb.finish()
-        
+
         print(f"\nCompleted evaluation for embedder: {embedder_name}")
         if ragas_results:
             print(f"  - Faithfulness: {ragas_results['faithfulness']:.4f}")
             print(f"  - Answer Relevancy: {ragas_results['answer_relevancy']:.4f}")
             print(f"  - Context Relevance: {ragas_results['context_relevance']:.4f}")
-    
+
     # Summary report
     print(f"\n{'='*60}")
     print("EVALUATION SUMMARY")
     print(f"{'='*60}")
-    
+
     for embedder_name, results in all_results.items():
         print(f"\n{embedder_name}:")
         print(f"  Samples: {results['num_samples']}")
-        if results['ragas']:
+        if results["ragas"]:
             print(f"  Faithfulness: {results['ragas']['faithfulness']:.4f}")
             print(f"  Answer Relevancy: {results['ragas']['answer_relevancy']:.4f}")
             print(f"  Context Relevance: {results['ragas']['context_relevance']:.4f}")

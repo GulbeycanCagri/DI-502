@@ -8,7 +8,7 @@ import aiofiles
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware  # Import added
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from werkzeug.utils import secure_filename
 
 # --- Path Correction
@@ -22,8 +22,8 @@ if str(project_root) not in sys.path:
 if str(parent_root) not in sys.path:
     sys.path.append(str(parent_root))
 
-from backend.src.rag_service_2 import plain_chat, query_document, query_online
 from backend.src.memory_manager import memory_manager
+from backend.src.rag_service import plain_chat, query_document, query_online
 
 TEST_MODE = False
 
@@ -39,7 +39,6 @@ app = FastAPI(
 origins = [
     # 1. Production Site (Firebase)
     "https://di502-economind.web.app",
-    
     # 2. Localhost (To avoid errors during development)
     "http://localhost:5173",  # Vite default
     "http://localhost:3000",  # React default
@@ -48,10 +47,10 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,     # Only allow listed origins
+    allow_origins=origins,  # Only allow listed origins
     allow_credentials=True,
-    allow_methods=["*"],       # Allow all methods (GET, POST, OPTIONS, etc.)
-    allow_headers=["*"],       # Allow all headers
+    allow_methods=["*"],  # Allow all methods (GET, POST, OPTIONS, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Configuration for uploads
@@ -60,6 +59,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 # --- Routes ---
+
 
 @app.get("/")
 async def root():
@@ -81,14 +81,14 @@ async def chat(
 ):
     """
     Main chat endpoint (Async Streaming Version) with conversation memory.
-    
+
     Args:
         question: The user's question
         use_online_research: Whether to use online research
         document: Optional document upload
         session_id: Optional session ID for conversation memory (auto-generated if not provided)
     """
-    
+
     # --- 1. Validation ---
     if not question:
         raise HTTPException(status_code=400, detail="There is no question provided.")
@@ -103,7 +103,7 @@ async def chat(
 
     # --- 3. File Handling (Pre-stream) ---
     saved_file_path = None
-    
+
     if document and document.filename:
         try:
             print(f"--- Document Received: {document.filename} ---")
@@ -115,9 +115,9 @@ async def chat(
             async with aiofiles.open(saved_file_path, "wb") as f:
                 while chunk := await document.read(1024 * 1024):
                     await f.write(chunk)
-            
+
             await document.close()
-            
+
         except Exception as e:
             print(f"File saving error: {e}")
             raise HTTPException(
@@ -129,27 +129,33 @@ async def chat(
     async def response_generator():
         # First, yield the session_id as metadata
         yield f"[SESSION_ID:{session_id}]"
-        
+
         try:
             if use_online_research:
                 print("--- Performing Online Research (Async Stream) ---")
-                async for chunk in query_online(question, test=TEST_MODE, session_id=session_id):
+                async for chunk in query_online(
+                    question, test=TEST_MODE, session_id=session_id
+                ):
                     yield chunk
 
             elif saved_file_path:
                 print(f"Querying file: {saved_file_path}")
-                async for chunk in query_document(question, saved_file_path, test=TEST_MODE, session_id=session_id):
+                async for chunk in query_document(
+                    question, saved_file_path, test=TEST_MODE, session_id=session_id
+                ):
                     yield chunk
 
             else:
                 print("--- Plain Chat (Async Stream) ---")
-                async for chunk in plain_chat(question, test=TEST_MODE, session_id=session_id):
+                async for chunk in plain_chat(
+                    question, test=TEST_MODE, session_id=session_id
+                ):
                     yield chunk
 
         except Exception as e:
             print(f"Streaming Error or Disconnect: {e}")
             yield f"\n[SYSTEM ERROR]: {str(e)}"
-        
+
         finally:
             if saved_file_path and os.path.exists(saved_file_path):
                 try:
@@ -166,7 +172,7 @@ async def chat(
 async def clear_session(session_id: str):
     """
     Clear a conversation session and its memory.
-    
+
     Args:
         session_id: The session ID to clear
     """
@@ -174,12 +180,11 @@ async def clear_session(session_id: str):
     if success:
         return JSONResponse(
             content={"message": f"Session {session_id} cleared successfully."},
-            status_code=200
+            status_code=200,
         )
     else:
         return JSONResponse(
-            content={"message": f"Session {session_id} not found."},
-            status_code=404
+            content={"message": f"Session {session_id} not found."}, status_code=404
         )
 
 
@@ -187,7 +192,7 @@ async def clear_session(session_id: str):
 async def get_session_info(session_id: str):
     """
     Get information about a conversation session.
-    
+
     Args:
         session_id: The session ID to check
     """
@@ -200,7 +205,7 @@ async def get_session_info(session_id: str):
                 "exists": True,
                 "message_count": len(history),
             },
-            status_code=200
+            status_code=200,
         )
     else:
         return JSONResponse(
@@ -209,7 +214,7 @@ async def get_session_info(session_id: str):
                 "exists": False,
                 "message_count": 0,
             },
-            status_code=200
+            status_code=200,
         )
 
 
@@ -224,9 +229,9 @@ async def create_new_session():
     return JSONResponse(
         content={
             "session_id": session_id,
-            "message": "New session created successfully."
+            "message": "New session created successfully.",
         },
-        status_code=201
+        status_code=201,
     )
 
 
