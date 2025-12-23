@@ -2,3 +2,8 @@ pytest
 pytest-asyncio
 httpx
 aiofiles
+anyio
+pytest-asyncio
+pytest-tornasync
+pytest-trio
+pytest-twisted

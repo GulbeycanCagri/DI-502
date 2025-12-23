@@ -1,3 +1,11 @@
+"""
+Backend API Tests - Tests for FastAPI endpoints
+
+NOTE: This file is named z_backend_test.py to ensure it loads alphabetically
+AFTER test_rag_service.py. This is critical because this file mocks
+backend.src.rag_service at module load time, which would break tests in
+test_rag_service.py that need the real module.
+"""
 import io
 import shutil
 import sys
@@ -12,6 +20,9 @@ async def mock_async_generator(*args, **kwargs):
     yield "Response"
 
 
+# Store original module if it exists
+_original_rag_service = sys.modules.get("backend.src.rag_service")
+
 mock_rag = MagicMock()
 mock_rag.plain_chat.side_effect = mock_async_generator
 mock_rag.query_online.side_effect = mock_async_generator
@@ -23,6 +34,14 @@ import backend.main as main_mod
 from backend.main import app
 
 CLIENT = TestClient(app)
+
+
+def restore_rag_service():
+    """Restore the original rag_service module after tests."""
+    if _original_rag_service is not None:
+        sys.modules["backend.src.rag_service"] = _original_rag_service
+    elif "backend.src.rag_service" in sys.modules:
+        del sys.modules["backend.src.rag_service"]
 UPLOAD_FOLDER = Path(main_mod.UPLOAD_FOLDER).resolve()
 
 
