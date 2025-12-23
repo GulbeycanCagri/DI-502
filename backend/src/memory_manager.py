@@ -182,7 +182,7 @@ class ConversationMemoryManager:
 
 # Global instance for the application
 memory_manager = ConversationMemoryManager(
-    token_limit=3000,  # ~3000 tokens of history
+    token_limit=20000,  # ~3000 tokens of history
     session_timeout=3600,  # 1 hour session timeout
-    max_sessions=1000,  # Max 1000 concurrent sessions
+    max_sessions=15,  # Max 1000 concurrent sessions
 )

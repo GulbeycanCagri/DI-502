@@ -51,6 +51,7 @@ class QueryIntent:
     ticker: Optional[str] = None
     company_name: Optional[str] = None
     crypto_symbol: Optional[str] = None
+    commodity_symbol: Optional[str] = None  # For gold, silver, oil, etc.
     keywords: List[str] = None
     needs_price_data: bool = False  # Should we fetch real-time price?
     needs_news: bool = True  # Should we fetch news? (default: always yes)
@@ -172,6 +173,25 @@ TICKER_MAPPING: Dict[str, str] = {
     "pltr": "PLTR",
 }
 
+# Commodity/Precious Metal mapping
+# Finnhub uses forex symbols for commodities: OANDA:XAU_USD for gold
+COMMODITY_MAPPING: Dict[str, str] = {
+    "gold": "XAU",
+    "xau": "XAU",
+    "silver": "XAG",
+    "xag": "XAG",
+    "platinum": "XPT",
+    "xpt": "XPT",
+    "palladium": "XPD",
+    "xpd": "XPD",
+    "crude oil": "OIL",
+    "oil": "OIL",
+    "wti": "OIL",
+    "brent": "BRENT",
+    "natural gas": "NATGAS",
+    "nat gas": "NATGAS",
+}
+
 # Cryptocurrency mapping
 CRYPTO_MAPPING: Dict[str, str] = {
     "bitcoin": "BTC",
@@ -222,6 +242,7 @@ def _build_chat_messages(
     messages = [ChatMessage(role=MessageRole.SYSTEM, content=system_prompt)]
 
     # Add conversation history if session exists
+    print(f"Is session_id present? {session_id is not None}")
     if session_id:
         history = memory_manager.get_chat_history(session_id)
         messages.extend(history)
@@ -235,23 +256,40 @@ def _build_chat_messages(
 # --- Query Intent Analysis ---
 
 
-def analyze_query_intent_with_llm(question: str) -> Dict[str, Any]:
+def analyze_query_intent_with_llm(question: str, session_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Use LLM to analyze query intent - this is the PRIMARY method for intent detection.
     Provides nuanced understanding of user questions.
+    Now conversation-aware: uses previous context for follow-up questions.
 
     Args:
         question: User's question
+        session_id: Optional session ID to get conversation history
 
     Returns:
         Dictionary with comprehensive intent analysis
     """
+    # Build conversation context for follow-up detection
+    conversation_context = ""
+    if session_id:
+        history = memory_manager.get_chat_history(session_id)
+        if history:
+            # Get last few exchanges for context
+            recent_messages = history[-6:]  # Last 3 exchanges (user+assistant)
+            context_parts = []
+            for msg in recent_messages:
+                role = "User" if msg.role == MessageRole.USER else "Assistant"
+                # Truncate long messages
+                content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+                context_parts.append(f"{role}: {content}")
+            conversation_context = "\n".join(context_parts)
+
     prompt = (
         """You are a financial query analyzer. Analyze the question and respond ONLY with valid JSON.
 
 Determine:
 1. "intent": The type of query
-   - "price_lookup": Direct price question (e.g., "What is Bitcoin price?", "NVDA stock price")
+   - "price_lookup": Direct price question (e.g., "What is Bitcoin price?", "Gold price?", "NVDA stock price")
    - "price_analysis": Analysis/prediction about price (e.g., "Will Bitcoin increase?", "Is AAPL overvalued?")
    - "news_query": News/updates request (e.g., "Latest Tesla news", "What's happening with crypto?")
    - "market_analysis": Market trends/overview (e.g., "How is the market?", "Tech sector outlook")
@@ -260,26 +298,45 @@ Determine:
 
 2. "ticker": Stock symbol if mentioned (e.g., "NVDA", "AAPL") or null
 3. "crypto": Crypto symbol if mentioned (e.g., "BTC", "ETH") or null
-4. "company": Company name if mentioned or null
-5. "needs_price": true if answering requires current price data
-6. "needs_news": true if answering requires recent news (usually true for analysis)
-7. "is_prediction": true if asking for future prediction/opinion
+4. "commodity": Commodity/precious metal if mentioned (e.g., "XAU" for gold, "XAG" for silver, "OIL" for crude oil) or null
+5. "company": Company name if mentioned or null
+6. "needs_price": true if answering requires current price data
+7. "needs_news": true if answering requires recent news (usually true for analysis)
+8. "is_prediction": true if asking for future prediction/opinion
+
+IMPORTANT: Gold is a commodity (XAU), NOT a stock or crypto. Silver is XAG. Oil is OIL.
 
 Examples:
 Q: "What is NVIDIA stock price?"
-A: {"intent":"price_lookup","ticker":"NVDA","crypto":null,"company":"NVIDIA","needs_price":true,"needs_news":false,"is_prediction":false}
+A: {"intent":"price_lookup","ticker":"NVDA","crypto":null,"commodity":null,"company":"NVIDIA","needs_price":true,"needs_news":false,"is_prediction":false}
+
+Q: "What is the current gold price?"
+A: {"intent":"price_lookup","ticker":null,"crypto":null,"commodity":"XAU","company":null,"needs_price":true,"needs_news":false,"is_prediction":false}
 
 Q: "Do you think Bitcoin price will increase?"
-A: {"intent":"price_analysis","ticker":null,"crypto":"BTC","company":null,"needs_price":true,"needs_news":true,"is_prediction":true}
+A: {"intent":"price_analysis","ticker":null,"crypto":"BTC","commodity":null,"company":null,"needs_price":true,"needs_news":true,"is_prediction":true}
 
 Q: "What's happening with Tesla lately?"
-A: {"intent":"news_query","ticker":"TSLA","crypto":null,"company":"Tesla","needs_price":false,"needs_news":true,"is_prediction":false}
+A: {"intent":"news_query","ticker":"TSLA","crypto":null,"commodity":null,"company":"Tesla","needs_price":false,"needs_news":true,"is_prediction":false}
 
 Q: "Is Apple stock overvalued?"
-A: {"intent":"price_analysis","ticker":"AAPL","crypto":null,"company":"Apple","needs_price":true,"needs_news":true,"is_prediction":true}
+A: {"intent":"price_analysis","ticker":"AAPL","crypto":null,"commodity":null,"company":"Apple","needs_price":true,"needs_news":true,"is_prediction":true}
 
 Q: "How is the crypto market doing?"
-A: {"intent":"market_analysis","ticker":null,"crypto":null,"company":null,"needs_price":false,"needs_news":true,"is_prediction":false}
+A: {"intent":"market_analysis","ticker":null,"crypto":null,"commodity":null,"company":null,"needs_price":false,"needs_news":true,"is_prediction":false}
+
+Q: "What is the silver price?"
+A: {"intent":"price_lookup","ticker":null,"crypto":null,"commodity":"XAG","company":null,"needs_price":true,"needs_news":false,"is_prediction":false}
+
+IMPORTANT - FOLLOW-UP QUESTIONS:
+If the current question is a follow-up (e.g., "What about Tesla?", "And Apple?", "How about Bitcoin?", "Same for gold"), 
+you MUST inherit the intent type from the previous question.
+For example:
+- Previous: "Give me NVIDIA price, technical analysis and news" -> intent was comprehensive (price + news + analysis)
+- Current: "What about Tesla?" -> SAME intent (price + news + analysis) but for Tesla
+
+Conversation History (if any):
+""" + (conversation_context if conversation_context else "No previous conversation.") + """
 
 Question: """
         + question
@@ -319,12 +376,19 @@ def extract_entities_rule_based(
         question: User's question (lowercase)
 
     Returns:
-        Tuple of (ticker, crypto_symbol, company_name)
+        Tuple of (ticker, crypto_symbol, commodity_symbol, company_name)
     """
     lowered = question.lower()
     ticker = None
     crypto = None
+    commodity = None
     company = None
+
+    # Check for commodities first (gold, silver, etc.)
+    for commodity_name, symbol in sorted(COMMODITY_MAPPING.items(), key=lambda x: -len(x[0])):
+        if commodity_name in lowered:
+            commodity = symbol
+            break
 
     for company_name, tick in sorted(TICKER_MAPPING.items(), key=lambda x: -len(x[0])):
         if company_name in lowered:
@@ -346,27 +410,31 @@ def extract_entities_rule_based(
                 ticker = match
                 break
 
-    return ticker, crypto, company
+    return ticker, crypto, commodity, company
 
 
-def analyze_query_intent(question: str) -> QueryIntent:
+def analyze_query_intent(question: str, session_id: Optional[str] = None) -> QueryIntent:
     """
     Analyze the user's question using LLM-first approach.
     Rule-based extraction is only used as fallback for entity extraction.
+    Now conversation-aware: passes session_id for follow-up detection.
 
     Args:
         question: User's question
+        session_id: Optional session ID for conversation context
 
     Returns:
         QueryIntent object with comprehensive parsed information
     """
-    print(f"--- Analyzing query intent for: '{question}' ---")
+    print(f"--- Analyzing query intent for: '{question}' | Session: {session_id} ---")
 
-    llm_result = analyze_query_intent_with_llm(question)
+    llm_result = analyze_query_intent_with_llm(question, session_id)
+    print(llm_result)
 
-    rule_ticker, rule_crypto, rule_company = extract_entities_rule_based(question)
+    rule_ticker, rule_crypto, rule_commodity, rule_company = extract_entities_rule_based(question)
 
     intent = QueryIntent(query_type=QueryType.GENERAL_FINANCE)
+    print(intent)
 
     # Use LLM results if available, otherwise fall back to rules
     if llm_result:
@@ -386,6 +454,7 @@ def analyze_query_intent(question: str) -> QueryIntent:
         # Handle case where LLM returns a list instead of string
         llm_ticker = llm_result.get("ticker")
         llm_crypto = llm_result.get("crypto")
+        llm_commodity = llm_result.get("commodity")
         llm_company = llm_result.get("company")
 
         # Convert lists to first element (take primary asset)
@@ -393,11 +462,14 @@ def analyze_query_intent(question: str) -> QueryIntent:
             llm_ticker = llm_ticker[0] if llm_ticker else None
         if isinstance(llm_crypto, list):
             llm_crypto = llm_crypto[0] if llm_crypto else None
+        if isinstance(llm_commodity, list):
+            llm_commodity = llm_commodity[0] if llm_commodity else None
         if isinstance(llm_company, list):
             llm_company = llm_company[0] if llm_company else None
 
         intent.ticker = llm_ticker or rule_ticker
         intent.crypto_symbol = llm_crypto or rule_crypto
+        intent.commodity_symbol = llm_commodity or rule_commodity
         intent.company_name = llm_company or rule_company
 
         # Get flags from LLM
@@ -409,6 +481,7 @@ def analyze_query_intent(question: str) -> QueryIntent:
         print("--- Falling back to rule-based intent detection ---")
         intent.ticker = rule_ticker
         intent.crypto_symbol = rule_crypto
+        intent.commodity_symbol = rule_commodity
         intent.company_name = rule_company
 
         # Simple heuristics for fallback
@@ -445,8 +518,9 @@ def analyze_query_intent(question: str) -> QueryIntent:
 
     print(
         f"Final Intent: type={intent.query_type.value}, ticker={intent.ticker}, "
-        f"crypto={intent.crypto_symbol}, needs_price={intent.needs_price_data}, "
-        f"needs_news={intent.needs_news}, is_prediction={intent.is_prediction_question}"
+        f"crypto={intent.crypto_symbol}, commodity={intent.commodity_symbol}, "
+        f"needs_price={intent.needs_price_data}, needs_news={intent.needs_news}, "
+        f"is_prediction={intent.is_prediction_question}"
     )
 
     return intent
@@ -776,6 +850,113 @@ def fetch_crypto_price(symbol: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def fetch_commodity_price(symbol: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch commodity/precious metal price from Yahoo Finance API (free, no key needed).
+    Supports gold (XAU), silver (XAG), platinum (XPT), palladium (XPD), oil, etc.
+
+    Args:
+        symbol: Commodity symbol (e.g., XAU, XAG, OIL)
+
+    Returns:
+        Dictionary with commodity price data or None
+    """
+    # Handle case where symbol might be a list or None
+    if symbol is None:
+        return None
+    if isinstance(symbol, list):
+        symbol = symbol[0] if symbol else None
+        if not symbol:
+            return None
+    if not isinstance(symbol, str):
+        print(f"Invalid commodity symbol type: {type(symbol)}, value: {symbol}")
+        return None
+
+    symbol = symbol.upper()
+
+    # Human-readable names
+    commodity_names = {
+        "XAU": "Gold",
+        "XAG": "Silver",
+        "XPT": "Platinum",
+        "XPD": "Palladium",
+        "OIL": "WTI Crude Oil",
+        "BRENT": "Brent Crude Oil",
+        "NATGAS": "Natural Gas",
+    }
+
+    # Yahoo Finance ticker symbols for commodities
+    yahoo_symbols = {
+        "XAU": "GC=F",      # Gold Futures
+        "XAG": "SI=F",      # Silver Futures
+        "XPT": "PL=F",      # Platinum Futures
+        "XPD": "PA=F",      # Palladium Futures
+        "OIL": "CL=F",      # WTI Crude Oil Futures
+        "BRENT": "BZ=F",    # Brent Crude Oil Futures
+        "NATGAS": "NG=F",   # Natural Gas Futures
+    }
+
+    yahoo_ticker = yahoo_symbols.get(symbol)
+    if not yahoo_ticker:
+        print(f"Unknown commodity symbol: {symbol}")
+        return None
+
+    try:
+        # Yahoo Finance API endpoint
+        endpoint = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        params = {"interval": "1d", "range": "1d"}
+        
+        response = requests.get(endpoint, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        result = data.get("chart", {}).get("result", [])
+        if result:
+            meta = result[0].get("meta", {})
+            quote = result[0].get("indicators", {}).get("quote", [{}])[0]
+            
+            current_price = meta.get("regularMarketPrice")
+            previous_close = meta.get("previousClose") or meta.get("chartPreviousClose")
+            
+            # Calculate change
+            change = None
+            change_percent = None
+            if current_price and previous_close:
+                change = current_price - previous_close
+                change_percent = (change / previous_close) * 100
+            
+            # Get high/low from quote data
+            high_list = quote.get("high", [])
+            low_list = quote.get("low", [])
+            open_list = quote.get("open", [])
+            
+            high = high_list[-1] if high_list else meta.get("regularMarketDayHigh")
+            low = low_list[-1] if low_list else meta.get("regularMarketDayLow")
+            open_price = open_list[-1] if open_list else None
+            
+            unit = "per troy ounce" if symbol in ["XAU", "XAG", "XPT", "XPD"] else "per barrel" if symbol in ["OIL", "BRENT"] else "per unit"
+            
+            return {
+                "symbol": symbol,
+                "name": commodity_names.get(symbol, symbol),
+                "price_usd": current_price,
+                "change": change,
+                "change_percent": change_percent,
+                "high": high,
+                "low": low,
+                "open": open_price,
+                "previous_close": previous_close,
+                "unit": unit,
+            }
+    except Exception as e:
+        print(f"Error fetching commodity price from Yahoo Finance for {symbol}: {e}")
+    
+    return None
+
+
 def fetch_crypto_news() -> List[Dict[str, Any]]:
     """
     Fetch cryptocurrency news from Finnhub.
@@ -834,6 +1015,7 @@ def build_context_from_data(
     stock_quote: Optional[Dict] = None,
     company_profile: Optional[Dict] = None,
     crypto_price: Optional[Dict] = None,
+    commodity_price: Optional[Dict] = None,
     news_articles: List[Dict] = None,
 ) -> str:
     """
@@ -844,6 +1026,7 @@ def build_context_from_data(
         stock_quote: Stock price data
         company_profile: Company info
         crypto_price: Crypto price data
+        commodity_price: Commodity/precious metal price data
         news_articles: List of news articles
 
     Returns:
@@ -898,6 +1081,32 @@ Market Cap: ${market_cap:,.0f}
 ===================================================
 """)
 
+    if commodity_price:
+        price_usd = commodity_price.get("price_usd", 0) or 0
+        name = commodity_price.get("name", commodity_price.get("symbol", "N/A"))
+        symbol = commodity_price.get("symbol", "N/A")
+        unit = commodity_price.get("unit", "per troy ounce")
+
+        # Build context - only include fields that have data
+        context_str = f"""
+=== REAL-TIME COMMODITY DATA FOR {name} ({symbol}) ===
+** IMPORTANT: Use this exact data to answer price questions **
+Current Price: ${price_usd:,.2f} USD ({unit})"""
+
+        # Add change data if available
+        if commodity_price.get("change") is not None:
+            change = commodity_price.get("change", 0)
+            change_percent = commodity_price.get("change_percent", 0) or 0
+            context_str += f"\nPrice Change: ${change:+.2f} ({change_percent:+.2f}%)"
+
+        if commodity_price.get("high") is not None:
+            context_str += f"\nDay High: ${commodity_price['high']:,.2f}"
+        if commodity_price.get("low") is not None:
+            context_str += f"\nDay Low: ${commodity_price['low']:,.2f}"
+
+        context_str += "\n==================================================="
+        context_parts.append(context_str)
+
     if news_articles:
         context_parts.append("\n=== Recent News (for context, NOT for price data) ===")
         for i, article in enumerate(news_articles[:10], 1):
@@ -927,8 +1136,9 @@ async def query_online(
 
     print(f"--- Performing enhanced online research | Session: {session_id} ---")
 
-    # Analyze query intent using LLM-first approach
-    intent = analyze_query_intent(question)
+    # Analyze query intent using LLM-first approach WITH conversation context
+    # This allows follow-up questions like "What about Tesla?" to inherit previous intent
+    intent = analyze_query_intent(question, session_id)
 
     try:
         documents_list = []
@@ -936,6 +1146,7 @@ async def query_online(
         stock_quote = None
         company_profile = None
         crypto_price = None
+        commodity_price = None
         news_articles = []
 
         if intent.needs_price_data:
@@ -946,6 +1157,9 @@ async def query_online(
             elif intent.crypto_symbol:
                 print(f"Fetching crypto price for {intent.crypto_symbol}")
                 crypto_price = fetch_crypto_price(intent.crypto_symbol)
+            elif intent.commodity_symbol:
+                print(f"Fetching commodity price for {intent.commodity_symbol}")
+                commodity_price = fetch_commodity_price(intent.commodity_symbol)
 
         if intent.needs_news:
             if intent.ticker:
@@ -956,6 +1170,11 @@ async def query_online(
                 # Crypto news
                 print("Fetching crypto news")
                 news_articles = fetch_crypto_news()
+            elif intent.commodity_symbol:
+                # Commodity/general market news
+                print("Fetching commodity/general market news")
+                general_news = fetch_general_news("general", days=7)
+                news_articles = general_news
             else:
                 # General market news
                 print("Fetching general market news")
@@ -982,6 +1201,7 @@ async def query_online(
             stock_quote=stock_quote,
             company_profile=company_profile,
             crypto_price=crypto_price,
+            commodity_price=commodity_price,
             news_articles=news_articles
             if not intent.needs_news
             else None,  # News goes to documents
@@ -1009,20 +1229,62 @@ async def query_online(
                     )
                     documents_list.append(doc)
 
+        # If no data found but we have conversation history, still try to answer
+        # This handles conversational queries like "what did I ask you?"
         if not documents_list and not additional_context:
-            yield "No relevant financial data or news found for your query. Please try rephrasing or ask about a different topic."
-            return
+            # Check if we have conversation history - if so, this might be a conversational query
+            if session_id:
+                history = memory_manager.get_chat_history(session_id)
+                if history:
+                    print("--- No financial data found, but have conversation history. Falling back to chat mode. ---")
+                    # Fall through to LLM response with history
+                else:
+                    yield "No relevant financial data or news found for your query. Please try rephrasing or ask about a different topic."
+                    return
+            else:
+                yield "No relevant financial data or news found for your query. Please try rephrasing or ask about a different topic."
+                return
 
-        # Store user message in memory
-        if session_id:
-            memory_manager.add_message(session_id, "user", question)
-
-        # Build conversation context
+        # Build conversation history string BEFORE adding current message
         conversation_context = ""
+        history_summary = ""
         if session_id:
-            history_str = memory_manager.get_history_as_string(session_id)
-            if history_str:
-                conversation_context = f"\nPrevious conversation:\n{history_str}\n"
+            history = memory_manager.get_chat_history(session_id)
+            if history:
+                # Get only user messages for "what did I ask" type questions
+                user_messages = [msg for msg in history if msg.role == MessageRole.USER]
+                
+                # Build history with MOST RECENT messages at the END (chronological order)
+                # But highlight the most recent ones
+                history_summary = "\n=== CONVERSATION HISTORY (oldest to newest) ===\n"
+                
+                # Show all messages in chronological order
+                for i, msg in enumerate(history):
+                    role = "User" if msg.role == MessageRole.USER else "Assistant"
+                    # Truncate long messages for context
+                    content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
+                    history_summary += f"{role}: {content}\n"
+                
+                history_summary += "=== END CONVERSATION HISTORY ===\n"
+                
+                # Add explicit last question reference
+                if user_messages:
+                    last_user_msg = user_messages[-1].content
+                    # Truncate if too long
+                    if len(last_user_msg) > 200:
+                        last_user_msg = last_user_msg[:200] + "..."
+                    history_summary += f"\n** THE MOST RECENT/LAST USER QUESTION WAS: \"{last_user_msg}\" **\n"
+                    
+                    # If there are multiple questions, also show second-to-last
+                    if len(user_messages) >= 2:
+                        second_last = user_messages[-2].content
+                        if len(second_last) > 200:
+                            second_last = second_last[:200] + "..."
+                        history_summary += f"** The question before that was: \"{second_last}\" **\n"
+                
+                print(f"--- Including {len(history)} messages from conversation history (last user question highlighted) ---")
+            # Now store user message in memory
+            memory_manager.add_message(session_id, "user", question)
 
         if intent.query_type == QueryType.PRICE_LOOKUP:
             instruction = """
@@ -1063,7 +1325,7 @@ Be specific and cite relevant information from the context.
 
 {additional_context}
 {instruction}
-{conversation_context}
+{history_summary}
 
 Based on the real-time data and recent news context provided, answer the following question.
 
@@ -1072,12 +1334,19 @@ IMPORTANT GUIDELINES:
 - For analysis questions, use news to support your points.
 - Be specific with numbers when available.
 - For predictions/opinions, base them on the news sentiment and clearly state they are analysis, not advice.
+- If the user asks about previous questions, "what did I ask", "last question", "en son ne sordum", etc., look at "THE MOST RECENT/LAST USER QUESTION WAS" section above. That is the answer - quote it exactly.
+- The conversation history is in chronological order (oldest first, newest last). The LAST user message in the history is the most recent question.
 
 Question: {question}"""
 
         print("Building index and synthesizing answer...")
 
         full_response = ""
+
+        # Build conversation history as chat messages for LLM
+        history_messages = []
+        if session_id:
+            history_messages = memory_manager.get_chat_history(session_id)
 
         if documents_list:
             index = VectorStoreIndex.from_documents(documents_list)
@@ -1095,13 +1364,17 @@ Question: {question}"""
                 await asyncio.sleep(0)
         else:
             # No news documents, use direct LLM response with price data
+            # Include conversation history as proper chat messages
             messages = [
                 ChatMessage(
                     role=MessageRole.SYSTEM,
-                    content="You are a financial analyst. Provide accurate information based on the data given. Never say you don't have information if data is provided in the context.",
+                    content="You are a financial analyst. Provide accurate information based on the data given. Never say you don't have information if data is provided in the context. Remember and refer to previous messages in the conversation.",
                 ),
-                ChatMessage(role=MessageRole.USER, content=enhanced_prompt),
             ]
+            # Add conversation history
+            messages.extend(history_messages)
+            # Add current user message with context
+            messages.append(ChatMessage(role=MessageRole.USER, content=enhanced_prompt))
 
             response_gen = await llm.astream_chat(messages)
             async for chunk in response_gen:
