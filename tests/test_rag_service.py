@@ -1,5 +1,5 @@
 """
-Unit tests for rag_service_2.py
+Unit tests for rag_service.py
 Tests the enhanced financial query processing and data fetching functions.
 """
 import sys
@@ -61,7 +61,7 @@ class TestQueryIntentAnalysis:
         assert ticker is None
         assert crypto is None
     
-    @patch('backend.src.rag_service_2.llm')
+    @patch('backend.src.rag_service.llm')
     def test_analyze_intent_price_lookup(self, mock_llm):
         """Test intent analysis for direct price queries."""
         mock_llm.complete.return_value = '{"intent": "price_lookup", "ticker": "NVDA", "crypto": null, "company": "NVIDIA", "needs_price": true, "needs_news": false, "is_prediction": false}'
@@ -73,7 +73,7 @@ class TestQueryIntentAnalysis:
         assert intent.needs_price_data == True
         assert intent.is_prediction_question == False
     
-    @patch('backend.src.rag_service_2.llm')
+    @patch('backend.src.rag_service.llm')
     def test_analyze_intent_price_analysis(self, mock_llm):
         """Test intent analysis for price analysis/prediction queries."""
         mock_llm.complete.return_value = '{"intent": "price_analysis", "ticker": null, "crypto": "BTC", "company": null, "needs_price": true, "needs_news": true, "is_prediction": true}'
@@ -86,7 +86,7 @@ class TestQueryIntentAnalysis:
         assert intent.needs_news == True
         assert intent.is_prediction_question == True
     
-    @patch('backend.src.rag_service_2.llm')
+    @patch('backend.src.rag_service.llm')
     def test_analyze_intent_news_query(self, mock_llm):
         """Test intent analysis for news queries."""
         mock_llm.complete.return_value = '{"intent": "news_query", "ticker": "TSLA", "crypto": null, "company": "Tesla", "needs_price": false, "needs_news": true, "is_prediction": false}'
@@ -97,7 +97,7 @@ class TestQueryIntentAnalysis:
         assert intent.ticker == "TSLA"
         assert intent.needs_news == True
     
-    @patch('backend.src.rag_service_2.llm')
+    @patch('backend.src.rag_service.llm')
     def test_analyze_intent_market_analysis(self, mock_llm):
         """Test intent analysis for market analysis queries."""
         mock_llm.complete.return_value = '{"intent": "market_analysis", "ticker": null, "crypto": null, "company": null, "needs_price": false, "needs_news": true, "is_prediction": false}'
@@ -169,7 +169,7 @@ class TestDataFetching:
         self.QueryIntent = QueryIntent
         self.QueryType = QueryType
     
-    @patch('backend.src.rag_service_2.requests.get')
+    @patch('backend.src.rag_service.requests.get')
     def test_fetch_stock_quote_success(self, mock_get):
         """Test successful stock quote fetch."""
         mock_response = MagicMock()
@@ -192,7 +192,7 @@ class TestDataFetching:
         assert result["change"] == 2.50
         assert result["percent_change"] == 1.69
     
-    @patch('backend.src.rag_service_2.requests.get')
+    @patch('backend.src.rag_service.requests.get')
     def test_fetch_stock_quote_failure(self, mock_get):
         """Test stock quote fetch with API error."""
         mock_get.side_effect = Exception("API Error")
@@ -201,7 +201,7 @@ class TestDataFetching:
         
         assert result is None
     
-    @patch('backend.src.rag_service_2.requests.get')
+    @patch('backend.src.rag_service.requests.get')
     def test_fetch_company_profile_success(self, mock_get):
         """Test successful company profile fetch."""
         mock_response = MagicMock()
@@ -222,7 +222,7 @@ class TestDataFetching:
         assert result["name"] == "NVIDIA Corporation"
         assert result["industry"] == "Technology"
     
-    @patch('backend.src.rag_service_2.requests.get')
+    @patch('backend.src.rag_service.requests.get')
     def test_fetch_company_news_success(self, mock_get):
         """Test successful company news fetch."""
         mock_response = MagicMock()
@@ -238,7 +238,7 @@ class TestDataFetching:
         assert len(result) == 2
         assert result[0]["headline"] == "NVIDIA News 1"
     
-    @patch('backend.src.rag_service_2.requests.get')
+    @patch('backend.src.rag_service.requests.get')
     def test_fetch_crypto_price_success(self, mock_get):
         """Test successful crypto price fetch."""
         mock_response = MagicMock()
@@ -258,7 +258,7 @@ class TestDataFetching:
         assert result["symbol"] == "BTC"
         assert result["price_usd"] == 45000.50
     
-    @patch('backend.src.rag_service_2.requests.get')
+    @patch('backend.src.rag_service.requests.get')
     def test_fetch_crypto_price_unknown_symbol(self, mock_get):
         """Test crypto price fetch with unknown symbol."""
         result = self.fetch_crypto_price("UNKNOWN")
@@ -482,7 +482,7 @@ class TestEdgeCases:
         assert ticker is None
         assert crypto is None
     
-    @patch('backend.src.rag_service_2.llm')
+    @patch('backend.src.rag_service.llm')
     def test_generate_keywords_llm_failure(self, mock_llm):
         """Test keyword generation falls back when LLM fails."""
         mock_llm.complete.side_effect = Exception("LLM Error")
@@ -493,7 +493,7 @@ class TestEdgeCases:
         assert isinstance(keywords, list)
         assert len(keywords) > 0
     
-    @patch('backend.src.rag_service_2.llm')
+    @patch('backend.src.rag_service.llm')
     def test_generate_keywords_success(self, mock_llm):
         """Test successful keyword generation."""
         mock_llm.complete.return_value = "Apple, stock, price, investment"
