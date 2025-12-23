@@ -17,7 +17,7 @@ mock_rag.plain_chat.side_effect = mock_async_generator
 mock_rag.query_online.side_effect = mock_async_generator
 mock_rag.query_document.side_effect = mock_async_generator
 
-sys.modules["backend.src.rag_service_2"] = mock_rag
+sys.modules["backend.src.rag_service"] = mock_rag
 
 import backend.main as main_mod
 from backend.main import app
@@ -63,7 +63,8 @@ def test_root_endpoint():
 def test_plain_chat_endpoint():
     resp = CLIENT.post("/chat", data={"question": "What is a 10-K report?"})
     assert resp.status_code == 200
-    assert resp.text == "Mocked Response"
+    assert "[SESSION_ID:" in resp.text
+    assert "Mocked Response" in resp.text
     assert "text/event-stream" in resp.headers["content-type"]
 
 
@@ -74,7 +75,8 @@ def test_online_research_endpoint():
         data={"question": "Is NVIDIA hiring?", "use_online_research": "true"},
     )
     assert resp.status_code == 200
-    assert resp.text == "Mocked Response"
+    assert "[SESSION_ID:" in resp.text
+    assert "Mocked Response" in resp.text
 
 
 def test_file_upload_endpoint():
@@ -89,7 +91,8 @@ def test_file_upload_endpoint():
     )
 
     assert resp.status_code == 200
-    assert resp.text == "Mocked Response"
+    assert "[SESSION_ID:" in resp.text
+    assert "Mocked Response" in resp.text
 
 
 def test_missing_question_returns_422():
