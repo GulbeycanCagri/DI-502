@@ -44,24 +44,24 @@ class TestQueryIntentAnalysis:
     
     def test_extract_entities_nvidia(self):
         """Test entity extraction for NVIDIA."""
-        ticker, crypto, company = extract_entities_rule_based("what is nvidia stock price")
+        ticker, crypto, commodity, company = extract_entities_rule_based("what is nvidia stock price")
         assert ticker == "NVDA"
         assert crypto is None
     
     def test_extract_entities_bitcoin(self):
         """Test entity extraction for Bitcoin."""
-        ticker, crypto, company = extract_entities_rule_based("bitcoin price today")
+        ticker, crypto, commodity, company = extract_entities_rule_based("bitcoin price today")
         assert ticker is None
         assert crypto == "BTC"
     
     def test_extract_entities_multiword_company(self):
         """Test entity extraction for multi-word company names."""
-        ticker, crypto, company = extract_entities_rule_based("bank of america news")
+        ticker, crypto, commodity, company = extract_entities_rule_based("bank of america news")
         assert ticker == "BAC"
     
     def test_extract_entities_no_match(self):
         """Test entity extraction returns None for unknown entities."""
-        ticker, crypto, company = extract_entities_rule_based("random company xyz")
+        ticker, crypto, commodity, company = extract_entities_rule_based("random company xyz")
         assert ticker is None
         assert crypto is None
     
@@ -438,21 +438,21 @@ class TestEdgeCases:
     
     def test_extract_entities_case_insensitive(self):
         """Test that entity extraction is case insensitive."""
-        ticker1, _, _ = extract_entities_rule_based("NVIDIA stock")
-        ticker2, _, _ = extract_entities_rule_based("nvidia stock")
-        ticker3, _, _ = extract_entities_rule_based("NvIdIa stock")
+        ticker1, _, _, _ = extract_entities_rule_based("NVIDIA stock")
+        ticker2, _, _, _ = extract_entities_rule_based("nvidia stock")
+        ticker3, _, _, _ = extract_entities_rule_based("NvIdIa stock")
         assert ticker1 == "NVDA"
         assert ticker2 == "NVDA"
         assert ticker3 == "NVDA"
     
     def test_extract_entities_with_special_chars(self):
         """Test entity extraction with special characters."""
-        ticker, _, _ = extract_entities_rule_based("what about nvidia?")
+        ticker, _, _, _ = extract_entities_rule_based("what about nvidia?")
         assert ticker == "NVDA"
     
     def test_extract_entities_empty_string(self):
         """Test entity extraction with empty string."""
-        ticker, crypto, company = extract_entities_rule_based("")
+        ticker, crypto, commodity, company = extract_entities_rule_based("")
         assert ticker is None
         assert crypto is None
     
