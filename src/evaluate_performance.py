@@ -1,20 +1,24 @@
-import os
-import torch
-import requests
 import datetime
+import os
 import time
+
+import requests
+import torch
 import wandb
-import pandas as pd
-from transformers import BitsAndBytesConfig, AutoModelForCausalLM, AutoTokenizer, pipeline
 from llama_index.core import (
-    VectorStoreIndex,
-    SimpleDirectoryReader,
     Document,
     Settings,
+    SimpleDirectoryReader,
+    VectorStoreIndex,
 )
-from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-
+from llama_index.llms.huggingface import HuggingFaceLLM
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    pipeline,
+)
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 WANDB_PROJECT = "Economind"
@@ -38,10 +42,10 @@ def get_model():
         model_id,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        #quantization_config=quant_config,
+        # quantization_config=quant_config,
     )
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    tokenizer.chat_template = None  
+    tokenizer.chat_template = None
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     return model, tokenizer
@@ -69,12 +73,9 @@ Settings.llm = HuggingFaceLLM(
 Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
 Settings.chunk_size = 1024
 
+
 #  PERFORMANCE LOGGER
-def log_metrics(tag: str, 
-                start_time: float, 
-                response: str, 
-                prefix: str = "",
-                **extra):
+def log_metrics(tag: str, start_time: float, response: str, prefix: str = "", **extra):
     """Logs performance metrics to W&B."""
     end_time = time.time()
     elapsed = end_time - start_time
@@ -82,19 +83,22 @@ def log_metrics(tag: str,
     throughput = num_tokens / elapsed if elapsed > 0 else 0
     gpu_mem = torch.cuda.max_memory_allocated() / (1024**2)
 
-    wandb.log({
-        "mode": tag,
-        f"response_time_sec_{prefix}": elapsed,
-        f"num_tokens_{prefix}": num_tokens,
-        f"throughput_tokens_per_sec_{prefix}": throughput,
-        f"gpu_memory_MB_{prefix}": gpu_mem,
-        **extra,
-    })
+    wandb.log(
+        {
+            "mode": tag,
+            f"response_time_sec_{prefix}": elapsed,
+            f"num_tokens_{prefix}": num_tokens,
+            f"throughput_tokens_per_sec_{prefix}": throughput,
+            f"gpu_memory_MB_{prefix}": gpu_mem,
+            **extra,
+        }
+    )
 
     print(
         f"[{tag}] time={elapsed:.2f}s | tokens={num_tokens} | "
         f"throughput={throughput:.1f} tok/s | GPU={gpu_mem:.1f} MB"
     )
+
 
 # PLAIN CHAT
 def plain_chat(question: str) -> str:
@@ -120,6 +124,7 @@ def plain_chat(question: str) -> str:
     response = output[0]["generated_text"].strip()
     log_metrics("plain_chat", start_time, response, prefix="plain_chat")
     return response
+
 
 # ONLINE RAG (Finnhub API)
 def extract_ticker_from_keywords(question: str) -> str | None:
@@ -149,7 +154,12 @@ def query_online(question: str) -> str:
             today = datetime.date.today()
             past = today - datetime.timedelta(days=10)
             url = "https://finnhub.io/api/v1/company-news"
-            params = {"symbol": ticker, "from": past, "to": today, "token": FINNHUB_API_KEY}
+            params = {
+                "symbol": ticker,
+                "from": past,
+                "to": today,
+                "token": FINNHUB_API_KEY,
+            }
         else:
             url = "https://finnhub.io/api/v1/news"
             params = {"category": "general", "token": FINNHUB_API_KEY}
@@ -185,6 +195,7 @@ def query_online(question: str) -> str:
     except Exception as e:
         print(f"Error in RAG: {e}")
         return "Error performing online research."
+
 
 # DOCUMENT RAG (with Normalized Metrics)
 def query_document(question: str, doc_path: str) -> str:
@@ -243,7 +254,10 @@ if __name__ == "__main__":
     print("Test 3: Document RAG")
     example_doc = "apple_test.pdf"
     if os.path.exists(example_doc):
-        doc_resp = query_document("What are Apple’s main product categories as described in its 2024 Form 10-K report", example_doc)
+        doc_resp = query_document(
+            "What are Apple’s main product categories as described in its 2024 Form 10-K report",
+            example_doc,
+        )
         print(f"Document RAG Response:\n{doc_resp}\n")
     else:
         print("No PDF found. Skipping Document RAG test.")
